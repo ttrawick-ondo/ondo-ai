@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { Wrench, ChevronDown, Check } from 'lucide-react'
+import { useEffect } from 'react'
+import { Wrench, ChevronDown, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
@@ -13,13 +13,31 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
-import { toolRegistry, getBuiltinToolNames } from '@/lib/tools'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  TooltipProvider,
+} from '@/components/ui/tooltip'
+import { toolRegistry } from '@/lib/tools'
 import { useEnabledTools, useChatActions } from '@/stores'
 
-export function ToolSelector() {
+interface ToolSelectorProps {
+  supportsTools?: boolean
+  modelName?: string
+}
+
+export function ToolSelector({ supportsTools = true, modelName }: ToolSelectorProps) {
   const enabledTools = useEnabledTools()
   const { setEnabledTools } = useChatActions()
   const allTools = toolRegistry.getAllTools()
+
+  // Clear enabled tools when switching to a model that doesn't support them
+  useEffect(() => {
+    if (!supportsTools && enabledTools.length > 0) {
+      setEnabledTools([])
+    }
+  }, [supportsTools, enabledTools.length, setEnabledTools])
 
   const handleToggleTool = (toolName: string) => {
     if (enabledTools.includes(toolName)) {
@@ -35,6 +53,31 @@ export function ToolSelector() {
 
   const handleDisableAll = () => {
     setEnabledTools([])
+  }
+
+  // If tools not supported, show disabled button with tooltip
+  if (!supportsTools) {
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2 h-8 opacity-50 cursor-not-allowed"
+              disabled
+            >
+              <Wrench className="h-4 w-4" />
+              <span className="hidden sm:inline">Tools</span>
+              <AlertCircle className="h-3 w-3" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            <p>{modelName || 'This model'} does not support function calling</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    )
   }
 
   return (

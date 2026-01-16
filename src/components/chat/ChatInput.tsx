@@ -11,7 +11,7 @@ import { ImageUpload, ImagePreviewList } from './ImageUpload'
 import { FileUpload, FileDropZone } from './FileUpload'
 import { FilePreviewList } from './FilePreview'
 import { PromptSelector } from './PromptSelector'
-import { useChatActions, useIsStreaming, useUserPreferences, useChatStore, useActiveWorkspace } from '@/stores'
+import { useChatActions, useIsStreaming, useUserPreferences, useChatStore, useActiveWorkspace, useModels } from '@/stores'
 import type { ImageAttachment, FileAttachment } from '@/types'
 
 interface ChatInputProps {
@@ -32,6 +32,9 @@ export function ChatInput({ conversationId }: ChatInputProps) {
   const workspace = useActiveWorkspace()
 
   const selectedModelId = conversation?.modelId || preferences.defaultModelId || 'claude-sonnet-4-20250514'
+  const models = useModels()
+  const selectedModel = models.find((m) => m.id === selectedModelId)
+  const supportsTools = selectedModel?.capabilities?.functionCalling ?? false
 
   const handleFilesSelected = useCallback((newFiles: FileAttachment[]) => {
     setFiles((prev) => [...prev, ...newFiles].slice(0, 5)) // Max 5 files
@@ -216,7 +219,10 @@ export function ChatInput({ conversationId }: ChatInputProps) {
 
               <div className="w-px h-6 bg-border mx-1" />
 
-              <ToolSelector />
+              <ToolSelector
+                supportsTools={supportsTools}
+                modelName={selectedModel?.name}
+              />
 
               <div className="w-px h-6 bg-border mx-1" />
 

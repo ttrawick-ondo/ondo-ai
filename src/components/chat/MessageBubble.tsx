@@ -10,6 +10,7 @@ import { MarkdownRenderer } from './MarkdownRenderer'
 import { ToolCallDisplay, ToolResultDisplay } from './ToolCallDisplay'
 import { ContentWithCitations } from './CitedContent'
 import { FilePreviewList } from './FilePreview'
+import { ReadAloudButton } from './AudioPlayer'
 import { ModelBadge } from '@/components/model'
 import type { Message, AIProvider, ImageAttachment, FileAttachment } from '@/types'
 import { isFileAttachment } from '@/types'
@@ -190,6 +191,10 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
                 {copied ? 'Copied!' : 'Copy'}
               </TooltipContent>
             </Tooltip>
+
+            {!isUser && !isStreaming && message.content && (
+              <ReadAloudButton text={message.content} />
+            )}
 
             {!isUser && !isStreaming && (
               <Tooltip>

@@ -28,6 +28,10 @@ export async function POST(request: NextRequest) {
         topP: body.options?.topP,
         stream: body.options?.stream ?? true,
         systemPrompt: body.options?.systemPrompt,
+        // Tool-related options
+        tools: body.options?.tools,
+        tool_choice: body.options?.tool_choice,
+        parallel_tool_calls: body.options?.parallel_tool_calls,
       },
     }
 

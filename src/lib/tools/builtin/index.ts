@@ -7,17 +7,23 @@ import { toolRegistry } from '../registry'
 import { getCurrentTimeTool } from './get-current-time'
 import { calculateTool } from './calculate'
 import { webSearchTool } from './web-search'
+import { generateImageTool } from './generate-image'
+import { gleanSearchTool } from './glean-search'
 
 // Export individual tools
 export { getCurrentTimeTool } from './get-current-time'
 export { calculateTool } from './calculate'
 export { webSearchTool } from './web-search'
+export { generateImageTool } from './generate-image'
+export { gleanSearchTool } from './glean-search'
 
 // All built-in tools
 export const builtinTools = [
   getCurrentTimeTool,
   calculateTool,
   webSearchTool,
+  generateImageTool,
+  gleanSearchTool,
 ]
 
 /**
