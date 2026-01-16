@@ -1,6 +1,6 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { Orchestrator, createInteractiveApprovalHandler } from '../../orchestrator/index.js';
+import { Orchestrator, createInteractiveApprovalHandler, createAutoApproveHandler } from '../../orchestrator/index.js';
 import { loadConfig } from '../../config/index.js';
 import { createSpinner } from '../ui/spinner.js';
 import { select, input, editor } from '../ui/prompts.js';
@@ -11,6 +11,7 @@ export function registerFeatureCommand(program) {
         .option('-s, --spec <spec>', 'Feature specification (inline)')
         .option('-f, --spec-file <file>', 'Feature specification file')
         .option('-i, --interactive', 'Interactive mode for plan review', true)
+        .option('-a, --auto-approve', 'Auto-approve all actions without prompting', false)
         .option('-v, --verbose', 'Verbose output', false)
         .option('--dry-run', 'Show what would be done without making changes', false)
         .action(async (options) => {
@@ -65,7 +66,10 @@ export function registerFeatureCommand(program) {
                 workingDirectory: process.cwd(),
             });
             // Set up approval handler for supervised execution
-            if (options.interactive !== false) {
+            if (options.autoApprove) {
+                orchestrator.setApprovalHandler(createAutoApproveHandler());
+            }
+            else if (options.interactive !== false) {
                 orchestrator.setApprovalHandler(createInteractiveApprovalHandler(async (message, opts) => {
                     return select({
                         message,
