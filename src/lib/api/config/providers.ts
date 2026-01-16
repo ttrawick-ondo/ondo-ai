@@ -111,8 +111,8 @@ export const modelConfigs: ModelConfig[] = [
   },
   // Anthropic models
   {
-    id: 'claude-3-5-sonnet-20241022',
-    name: 'Claude 3.5 Sonnet',
+    id: 'claude-sonnet-4-20250514',
+    name: 'Claude Sonnet 4',
     provider: 'anthropic',
     description: 'Best balance of intelligence and speed',
     capabilities: {
@@ -121,7 +121,7 @@ export const modelConfigs: ModelConfig[] = [
       files: true,
       functionCalling: true,
       maxInputTokens: 200000,
-      maxOutputTokens: 8192,
+      maxOutputTokens: 16384,
     },
     pricing: {
       inputPer1M: 3,
@@ -131,8 +131,8 @@ export const modelConfigs: ModelConfig[] = [
     isDefault: true,
   },
   {
-    id: 'claude-3-opus-20240229',
-    name: 'Claude 3 Opus',
+    id: 'claude-opus-4-20250514',
+    name: 'Claude Opus 4',
     provider: 'anthropic',
     description: 'Most powerful Claude model for complex tasks',
     capabilities: {
@@ -141,7 +141,7 @@ export const modelConfigs: ModelConfig[] = [
       files: true,
       functionCalling: true,
       maxInputTokens: 200000,
-      maxOutputTokens: 4096,
+      maxOutputTokens: 16384,
     },
     pricing: {
       inputPer1M: 15,
@@ -150,27 +150,8 @@ export const modelConfigs: ModelConfig[] = [
     isEnabled: true,
   },
   {
-    id: 'claude-3-sonnet-20240229',
-    name: 'Claude 3 Sonnet',
-    provider: 'anthropic',
-    description: 'Balanced performance for most tasks',
-    capabilities: {
-      streaming: true,
-      vision: true,
-      files: true,
-      functionCalling: true,
-      maxInputTokens: 200000,
-      maxOutputTokens: 4096,
-    },
-    pricing: {
-      inputPer1M: 3,
-      outputPer1M: 15,
-    },
-    isEnabled: true,
-  },
-  {
-    id: 'claude-3-haiku-20240307',
-    name: 'Claude 3 Haiku',
+    id: 'claude-3-5-haiku-20241022',
+    name: 'Claude 3.5 Haiku',
     provider: 'anthropic',
     description: 'Fastest and most cost-effective Claude model',
     capabilities: {
@@ -179,11 +160,11 @@ export const modelConfigs: ModelConfig[] = [
       files: true,
       functionCalling: true,
       maxInputTokens: 200000,
-      maxOutputTokens: 4096,
+      maxOutputTokens: 8192,
     },
     pricing: {
-      inputPer1M: 0.25,
-      outputPer1M: 1.25,
+      inputPer1M: 0.8,
+      outputPer1M: 4,
     },
     isEnabled: true,
   },

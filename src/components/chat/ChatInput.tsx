@@ -30,7 +30,7 @@ export function ChatInput({ conversationId }: ChatInputProps) {
   const conversation = useChatStore((state) => state.conversations[conversationId])
   const workspace = useActiveWorkspace()
 
-  const selectedModelId = conversation?.modelId || preferences.defaultModelId || 'claude-3-5-sonnet-20241022'
+  const selectedModelId = conversation?.modelId || preferences.defaultModelId || 'claude-sonnet-4-20250514'
 
   const handleFilesSelected = useCallback((newFiles: FileAttachment[]) => {
     setFiles((prev) => [...prev, ...newFiles].slice(0, 5)) // Max 5 files

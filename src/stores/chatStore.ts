@@ -126,7 +126,7 @@ export const useChatStore = create<ChatStore>()(
           if (!activeConversationId) return
 
           const conversation = conversations[activeConversationId]
-          const modelId = input.modelId || conversation.modelId || 'claude-3-5-sonnet-20241022'
+          const modelId = input.modelId || conversation.modelId || 'claude-sonnet-4-20250514'
 
           const userMessageId = `msg-${generateId()}`
           const now = new Date()
