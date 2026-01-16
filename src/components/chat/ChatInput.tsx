@@ -22,6 +22,7 @@ export function ChatInput({ conversationId }: ChatInputProps) {
   const [message, setMessage] = useState('')
   const [images, setImages] = useState<ImageAttachment[]>([])
   const [files, setFiles] = useState<FileAttachment[]>([])
+  const [activePromptName, setActivePromptName] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const { sendMessage, updateConversationModel } = useChatActions()
@@ -40,13 +41,25 @@ export function ChatInput({ conversationId }: ChatInputProps) {
     updateConversationModel(conversationId, modelId)
   }
 
-  // Auto-resize textarea
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto'
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`
+  const handlePromptSelect = (content: string, promptName: string) => {
+    setMessage(content)
+    setActivePromptName(promptName)
+    // Focus the textarea so user can edit
+    setTimeout(() => textareaRef.current?.focus(), 0)
+  }
+
+  const clearPromptContext = () => {
+    setActivePromptName(null)
+  }
+
+  // Clear prompt context when user significantly edits the message
+  const handleMessageChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setMessage(e.target.value)
+    // If user clears the message, clear the prompt context
+    if (!e.target.value.trim()) {
+      clearPromptContext()
     }
-  }, [message])
+  }
 
   // Handle paste events for images
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
@@ -59,7 +72,6 @@ export function ChatInput({ conversationId }: ChatInputProps) {
 
     if (imageItems.length > 0 && images.length < 10) {
       // Let ImageUpload handle the paste via document listener
-      // This is a fallback that could be used if needed
     }
   }, [images])
 
@@ -104,6 +116,7 @@ export function ChatInput({ conversationId }: ChatInputProps) {
     setMessage('')
     setImages([])
     setFiles([])
+    clearPromptContext()
 
     // Generate default content if needed
     let finalContent = content
@@ -137,10 +150,10 @@ export function ChatInput({ conversationId }: ChatInputProps) {
       disabled={isStreaming}
       className="relative"
     >
-      <div ref={containerRef}>
+      <div ref={containerRef} className="space-y-3">
         {/* Attachment previews */}
         {hasAttachments && (
-          <div className="mb-2 space-y-2">
+          <div className="space-y-2">
             {images.length > 0 && (
               <ImagePreviewList
                 images={images}
@@ -157,74 +170,105 @@ export function ChatInput({ conversationId }: ChatInputProps) {
           </div>
         )}
 
-        <div className="flex items-end gap-2 rounded-2xl border bg-background p-2 shadow-sm focus-within:ring-1 focus-within:ring-ring">
-          <ModelSelector
-            selectedModelId={selectedModelId}
-            onModelSelect={handleModelSelect}
-            workspaceId={workspace?.id}
-            compact
-            disabled={isStreaming}
-          />
+        {/* Main input container */}
+        <div className="rounded-2xl border bg-background shadow-sm focus-within:ring-1 focus-within:ring-ring overflow-hidden">
+          {/* Prompt template indicator */}
+          {activePromptName && (
+            <div className="flex items-center justify-between px-4 py-2 bg-primary/5 border-b">
+              <span className="text-xs text-muted-foreground">
+                Using template: <span className="font-medium text-foreground">{activePromptName}</span>
+              </span>
+              <button
+                onClick={clearPromptContext}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                Clear
+              </button>
+            </div>
+          )}
 
-          <ToolSelector />
-
-          <ImageUpload
-            images={images}
-            onImagesChange={setImages}
-            disabled={isStreaming}
-          />
-
-          <FileUpload
-            onFilesSelected={handleFilesSelected}
-            disabled={isStreaming}
-            maxFiles={5 - files.length}
-          />
-
-          <PromptSelector
-            onSelect={(content) => setMessage(content)}
-            disabled={isStreaming}
-          />
-
+          {/* Textarea - full width, larger */}
           <Textarea
             ref={textareaRef}
             value={message}
-            onChange={(e) => setMessage(e.target.value)}
+            onChange={handleMessageChange}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder="Type your message..."
             disabled={isStreaming}
             className={cn(
-              'min-h-[40px] max-h-[200px] flex-1 resize-none border-0 bg-transparent px-2 py-2 text-sm focus-visible:ring-0 focus-visible:ring-offset-0',
+              'min-h-[120px] max-h-[300px] w-full resize-none border-0 bg-transparent p-4 text-sm focus-visible:ring-0 focus-visible:ring-offset-0',
               isStreaming && 'opacity-50'
             )}
-            rows={1}
+            rows={4}
           />
 
-          <Button
-            size="icon"
-            className="h-9 w-9 shrink-0 rounded-xl"
-            onClick={handleSubmit}
-            disabled={(!message.trim() && !hasAttachments) || isStreaming}
-          >
-            {isStreaming ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
+          {/* Toolbar */}
+          <div className="flex items-center justify-between border-t px-2 py-2">
+            <div className="flex items-center gap-1">
+              <ModelSelector
+                selectedModelId={selectedModelId}
+                onModelSelect={handleModelSelect}
+                workspaceId={workspace?.id}
+                compact
+                disabled={isStreaming}
+              />
 
-        <p className="mt-2 text-center text-xs text-muted-foreground">
-          {preferences.sendWithEnter ? (
-            <>
-              Press <kbd className="rounded border px-1">Enter</kbd> to send,{' '}
-              <kbd className="rounded border px-1">Shift + Enter</kbd> for new line
-            </>
-          ) : (
-            <>
-              Press <kbd className="rounded border px-1">⌘ + Enter</kbd> to send
-            </>
-          )}
-        </p>
+              <div className="w-px h-6 bg-border mx-1" />
+
+              <ToolSelector />
+
+              <div className="w-px h-6 bg-border mx-1" />
+
+              <ImageUpload
+                images={images}
+                onImagesChange={setImages}
+                disabled={isStreaming}
+              />
+
+              <FileUpload
+                onFilesSelected={handleFilesSelected}
+                disabled={isStreaming}
+                maxFiles={5 - files.length}
+              />
+
+              <PromptSelector
+                onSelect={handlePromptSelect}
+                disabled={isStreaming}
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground hidden sm:block">
+                {preferences.sendWithEnter ? (
+                  <>
+                    <kbd className="rounded border px-1 py-0.5 text-[10px]">Enter</kbd> to send
+                  </>
+                ) : (
+                  <>
+                    <kbd className="rounded border px-1 py-0.5 text-[10px]">⌘↵</kbd> to send
+                  </>
+                )}
+              </span>
+
+              <Button
+                size="sm"
+                className="h-8 px-4 rounded-lg"
+                onClick={handleSubmit}
+                disabled={(!message.trim() && !hasAttachments) || isStreaming}
+              >
+                {isStreaming ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <>
+                    <Send className="h-4 w-4 mr-2" />
+                    Send
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
       </div>
     </FileDropZone>
   )
