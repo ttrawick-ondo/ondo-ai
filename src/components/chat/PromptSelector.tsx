@@ -354,7 +354,10 @@ function VariableInput({ variable, value, onChange }: VariableInputProps) {
     variable.name.toLowerCase().includes('text') ||
     variable.name.toLowerCase().includes('data') ||
     variable.name.toLowerCase().includes('body') ||
-    variable.name.toLowerCase().includes('description')
+    variable.name.toLowerCase().includes('description') ||
+    variable.name.toLowerCase().includes('code') ||
+    variable.name.toLowerCase().includes('query') ||
+    variable.name.toLowerCase().includes('prompt')
 
   return (
     <div className="space-y-1">
