@@ -189,8 +189,9 @@ export const useSelectedModel = () => {
   return selectedModelId ? models[selectedModelId] : null
 }
 
+const EMPTY_GLEAN_AGENTS: GleanAgentConfig[] = []
 export const useGleanAgents = (workspaceId: string) =>
-  useModelStore((state) => state.gleanAgentsByWorkspace[workspaceId] || [])
+  useModelStore((state) => state.gleanAgentsByWorkspace[workspaceId] ?? EMPTY_GLEAN_AGENTS)
 
 export const useGleanDataSources = () =>
   useModelStore((state) => state.gleanDataSources)
