@@ -1,16 +1,16 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback, KeyboardEvent } from 'react'
-import { Send, Library, Loader2 } from 'lucide-react'
+import { Send, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
 import { ModelSelector } from '@/components/model'
 import { ToolSelector } from './ToolSelector'
 import { ImageUpload, ImagePreviewList } from './ImageUpload'
 import { FileUpload, FileDropZone } from './FileUpload'
 import { FilePreviewList } from './FilePreview'
+import { PromptSelector } from './PromptSelector'
 import { useChatActions, useIsStreaming, useUserPreferences, useChatStore, useActiveWorkspace } from '@/stores'
 import type { ImageAttachment, FileAttachment } from '@/types'
 
@@ -180,21 +180,10 @@ export function ChatInput({ conversationId }: ChatInputProps) {
             maxFiles={5 - files.length}
           />
 
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-9 w-9 shrink-0"
-                  disabled={isStreaming}
-                >
-                  <Library className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="top">Use prompt template</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <PromptSelector
+            onSelect={(content) => setMessage(content)}
+            disabled={isStreaming}
+          />
 
           <Textarea
             ref={textareaRef}
