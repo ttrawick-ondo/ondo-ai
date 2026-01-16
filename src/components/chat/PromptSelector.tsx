@@ -346,6 +346,16 @@ interface VariableInputProps {
 }
 
 function VariableInput({ variable, value, onChange }: VariableInputProps) {
+  // Use textarea for content/message type variables or if name suggests multi-line
+  const isMultiline =
+    variable.name.toLowerCase().includes('content') ||
+    variable.name.toLowerCase().includes('message') ||
+    variable.name.toLowerCase().includes('input') ||
+    variable.name.toLowerCase().includes('text') ||
+    variable.name.toLowerCase().includes('data') ||
+    variable.name.toLowerCase().includes('body') ||
+    variable.name.toLowerCase().includes('description')
+
   return (
     <div className="space-y-1">
       <label className="text-sm font-medium flex items-center gap-2">
@@ -355,11 +365,20 @@ function VariableInput({ variable, value, onChange }: VariableInputProps) {
       {variable.description && (
         <p className="text-xs text-muted-foreground">{variable.description}</p>
       )}
-      <Input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={variable.defaultValue || `Enter ${variable.name}...`}
-      />
+      {isMultiline ? (
+        <Textarea
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={variable.defaultValue || `Enter ${variable.name}...`}
+          className="min-h-[100px]"
+        />
+      ) : (
+        <Input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={variable.defaultValue || `Enter ${variable.name}...`}
+        />
+      )}
     </div>
   )
 }
