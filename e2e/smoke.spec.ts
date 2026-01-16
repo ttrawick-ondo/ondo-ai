@@ -119,24 +119,36 @@ test.describe('Chat functionality', () => {
     expect(reactErrors).toHaveLength(0)
   })
 
-  test('Conversation page renders without React errors', async ({ page }) => {
+  test('Conversation page with ID renders without React errors', async ({ page }) => {
     const errors = await collectPageErrors(page)
 
-    // Go directly to a conversation URL (will create if needed)
+    // Go directly to a conversation URL with an ID
+    await page.goto('/chat/conv-test123')
+    await page.waitForLoadState('networkidle')
+    await page.waitForTimeout(2000) // Wait for client hydration
+
+    const reactErrors = errors.filter(isReactError)
+    if (reactErrors.length > 0) {
+      console.error('React errors on conversation page:', reactErrors)
+    }
+    expect(reactErrors).toHaveLength(0)
+  })
+
+  test('Existing conversation page renders without React errors', async ({ page }) => {
+    const errors = await collectPageErrors(page)
+
+    // First create a conversation
     await page.goto('/chat')
     await page.waitForLoadState('networkidle')
 
-    // Try to start a new chat
     try {
       await page.getByRole('button', { name: /start new chat/i }).click({ timeout: 3000 })
-      await page.waitForTimeout(2000)
+      await page.waitForURL(/\/chat\/conv-/, { timeout: 5000 })
+      await page.waitForLoadState('networkidle')
+      await page.waitForTimeout(2000) // Wait for full render
     } catch {
-      // Continue even if button not found
+      // Continue even if navigation doesn't happen as expected
     }
-
-    // Wait for any rendering to complete
-    await page.waitForLoadState('networkidle')
-    await page.waitForTimeout(1000)
 
     const reactErrors = errors.filter(isReactError)
     expect(reactErrors).toHaveLength(0)
