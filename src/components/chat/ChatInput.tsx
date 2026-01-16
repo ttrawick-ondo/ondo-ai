@@ -6,7 +6,8 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
-import { useChatActions, useIsStreaming, useUserPreferences } from '@/stores'
+import { ModelSelector } from '@/components/model'
+import { useChatActions, useIsStreaming, useUserPreferences, useChatStore, useActiveWorkspace } from '@/stores'
 
 interface ChatInputProps {
   conversationId: string
@@ -15,9 +16,17 @@ interface ChatInputProps {
 export function ChatInput({ conversationId }: ChatInputProps) {
   const [message, setMessage] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const { sendMessage } = useChatActions()
+  const { sendMessage, updateConversationModel } = useChatActions()
   const isStreaming = useIsStreaming()
   const preferences = useUserPreferences()
+  const conversation = useChatStore((state) => state.conversations[conversationId])
+  const workspace = useActiveWorkspace()
+
+  const selectedModelId = conversation?.modelId || preferences.defaultModelId || 'claude-3-5-sonnet-20241022'
+
+  const handleModelSelect = (modelId: string) => {
+    updateConversationModel(conversationId, modelId)
+  }
 
   // Auto-resize textarea
   useEffect(() => {
@@ -32,7 +41,7 @@ export function ChatInput({ conversationId }: ChatInputProps) {
 
     const content = message.trim()
     setMessage('')
-    await sendMessage({ content })
+    await sendMessage({ content, modelId: selectedModelId })
   }
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -45,6 +54,14 @@ export function ChatInput({ conversationId }: ChatInputProps) {
   return (
     <div className="relative">
       <div className="flex items-end gap-2 rounded-2xl border bg-background p-2 shadow-sm focus-within:ring-1 focus-within:ring-ring">
+        <ModelSelector
+          selectedModelId={selectedModelId}
+          onModelSelect={handleModelSelect}
+          workspaceId={workspace?.id}
+          compact
+          disabled={isStreaming}
+        />
+
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>

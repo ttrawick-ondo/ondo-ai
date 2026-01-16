@@ -33,6 +33,7 @@ export interface Conversation {
   projectId?: string
   workspaceId?: string
   userId: string
+  modelId?: string
   messageCount: number
   lastMessageAt: Date
   createdAt: Date
@@ -49,4 +50,5 @@ export interface SendMessageInput {
   content: string
   attachments?: Omit<Attachment, 'id'>[]
   promptId?: string
+  modelId?: string
 }

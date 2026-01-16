@@ -1,9 +1,10 @@
 import { useMemo } from 'react'
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
-import type { Conversation, Message, SendMessageInput } from '@/types'
-import { mockConversations, mockMessages, mockAIResponses } from '@/lib/mocks/data'
-import { generateId, sleep } from '@/lib/utils'
+import type { Conversation, Message, SendMessageInput, AIProvider } from '@/types'
+import { mockConversations, mockMessages } from '@/lib/mocks/data'
+import { generateId } from '@/lib/utils'
+import { chatClient } from '@/lib/api/client'
 
 interface ChatState {
   conversations: Record<string, Conversation>
@@ -16,9 +17,10 @@ interface ChatState {
 
 interface ChatActions {
   setActiveConversation: (id: string | null) => void
-  createConversation: (title?: string, projectId?: string) => string
+  createConversation: (title?: string, projectId?: string, modelId?: string) => string
   deleteConversation: (id: string) => void
   updateConversationTitle: (id: string, title: string) => void
+  updateConversationModel: (id: string, modelId: string) => void
   sendMessage: (input: SendMessageInput) => Promise<void>
   clearConversation: (id: string) => void
   loadConversations: () => void
@@ -47,7 +49,7 @@ export const useChatStore = create<ChatStore>()(
           set({ activeConversationId: id })
         },
 
-        createConversation: (title = 'New conversation', projectId) => {
+        createConversation: (title = 'New conversation', projectId, modelId) => {
           const id = `conv-${generateId()}`
           const now = new Date()
 
@@ -55,6 +57,7 @@ export const useChatStore = create<ChatStore>()(
             id,
             title,
             projectId,
+            modelId,
             userId: 'user-1',
             messageCount: 0,
             lastMessageAt: now,
@@ -94,9 +97,21 @@ export const useChatStore = create<ChatStore>()(
           }))
         },
 
+        updateConversationModel: (id, modelId) => {
+          set((state) => ({
+            conversations: {
+              ...state.conversations,
+              [id]: { ...state.conversations[id], modelId, updatedAt: new Date() },
+            },
+          }))
+        },
+
         sendMessage: async (input) => {
-          const { activeConversationId, conversations } = get()
+          const { activeConversationId, conversations, messagesByConversation } = get()
           if (!activeConversationId) return
+
+          const conversation = conversations[activeConversationId]
+          const modelId = input.modelId || conversation.modelId || 'claude-3-5-sonnet-20241022'
 
           const userMessageId = `msg-${generateId()}`
           const now = new Date()
@@ -134,53 +149,107 @@ export const useChatStore = create<ChatStore>()(
             },
           }))
 
-          // Start streaming simulation
+          // Start streaming
           set({ isStreaming: true, streamingMessage: '' })
 
           const aiMessageId = `msg-${generateId()}`
           let fullResponse = ''
 
-          // Simulate streaming response
-          for (const chunk of mockAIResponses) {
-            await sleep(100 + Math.random() * 200)
-            fullResponse += chunk
-            set({ streamingMessage: fullResponse })
-          }
-
-          // Finalize AI message
-          const aiMessage: Message = {
-            id: aiMessageId,
-            conversationId: activeConversationId,
-            role: 'assistant',
-            content: fullResponse,
-            metadata: {
-              model: 'claude-3-opus',
-              tokenCount: Math.floor(fullResponse.length / 4),
-              processingTimeMs: 1500 + Math.random() * 1000,
-            },
-            createdAt: new Date(),
-          }
-
-          set((state) => ({
-            messagesByConversation: {
-              ...state.messagesByConversation,
-              [activeConversationId]: [
-                ...(state.messagesByConversation[activeConversationId] || []),
-                aiMessage,
-              ],
-            },
-            conversations: {
-              ...state.conversations,
-              [activeConversationId]: {
-                ...state.conversations[activeConversationId],
-                messageCount: state.conversations[activeConversationId].messageCount + 1,
-                lastMessageAt: new Date(),
-                updatedAt: new Date(),
-              },
-            },
-            isStreaming: false,
-            streamingMessage: '',
+          // Get conversation messages for API
+          const existingMessages = messagesByConversation[activeConversationId] || []
+          const apiMessages = [...existingMessages, userMessage].map((msg) => ({
+            role: msg.role,
+            content: msg.content,
           }))
+
+          // Determine provider from model ID
+          let provider: AIProvider = 'anthropic'
+          if (modelId.startsWith('gpt-')) provider = 'openai'
+          else if (modelId.startsWith('glean-')) provider = 'glean'
+          else if (modelId.startsWith('dust-')) provider = 'dust'
+          else if (modelId.startsWith('ondobot-')) provider = 'ondobot'
+
+          try {
+            await chatClient.stream(
+              {
+                conversationId: activeConversationId,
+                messages: apiMessages,
+                provider,
+                model: modelId,
+              },
+              {
+                onStart: () => {
+                  set({ streamingMessage: '' })
+                },
+                onDelta: (delta) => {
+                  fullResponse += delta
+                  set({ streamingMessage: fullResponse })
+                },
+                onDone: (response) => {
+                  const aiMessage: Message = {
+                    id: aiMessageId,
+                    conversationId: activeConversationId,
+                    role: 'assistant',
+                    content: response.message.content,
+                    metadata: {
+                      model: response.metadata.model,
+                      tokenCount: response.usage.totalTokens,
+                      processingTimeMs: response.metadata.processingTimeMs,
+                    },
+                    createdAt: new Date(),
+                  }
+
+                  set((state) => ({
+                    messagesByConversation: {
+                      ...state.messagesByConversation,
+                      [activeConversationId]: [
+                        ...(state.messagesByConversation[activeConversationId] || []),
+                        aiMessage,
+                      ],
+                    },
+                    conversations: {
+                      ...state.conversations,
+                      [activeConversationId]: {
+                        ...state.conversations[activeConversationId],
+                        messageCount: state.conversations[activeConversationId].messageCount + 1,
+                        lastMessageAt: new Date(),
+                        updatedAt: new Date(),
+                      },
+                    },
+                    isStreaming: false,
+                    streamingMessage: '',
+                  }))
+                },
+                onError: (error) => {
+                  console.error('Chat error:', error)
+
+                  // Add error message
+                  const errorMessage: Message = {
+                    id: aiMessageId,
+                    conversationId: activeConversationId,
+                    role: 'assistant',
+                    content: `Sorry, there was an error processing your request: ${error}`,
+                    createdAt: new Date(),
+                  }
+
+                  set((state) => ({
+                    messagesByConversation: {
+                      ...state.messagesByConversation,
+                      [activeConversationId]: [
+                        ...(state.messagesByConversation[activeConversationId] || []),
+                        errorMessage,
+                      ],
+                    },
+                    isStreaming: false,
+                    streamingMessage: '',
+                  }))
+                },
+              }
+            )
+          } catch (error) {
+            console.error('Chat error:', error)
+            set({ isStreaming: false, streamingMessage: '' })
+          }
         },
 
         clearConversation: (id) => {

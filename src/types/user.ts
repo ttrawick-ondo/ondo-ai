@@ -13,4 +13,5 @@ export interface UserPreferences {
   showCodeLineNumbers: boolean
   defaultProjectId?: string
   defaultWorkspaceId?: string
+  defaultModelId?: string
 }

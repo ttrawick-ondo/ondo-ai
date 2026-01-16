@@ -3,6 +3,8 @@ export * from './chat'
 export * from './project'
 export * from './workspace'
 export * from './prompt'
+export * from './model'
+export * from './api'
 
 // API response types
 export interface ApiResponse<T> {
@@ -32,6 +34,7 @@ export type ModalType =
   | 'create-project'
   | 'create-workspace'
   | 'create-prompt'
+  | 'create-glean-agent'
   | 'invite-member'
   | 'settings'
   | 'confirm-delete'

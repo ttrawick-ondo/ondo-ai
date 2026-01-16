@@ -7,8 +7,9 @@ import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
 import { MarkdownRenderer } from './MarkdownRenderer'
-import type { Message } from '@/types'
-import { useCurrentUser } from '@/stores'
+import { ModelBadge } from '@/components/model'
+import type { Message, AIProvider } from '@/types'
+import { useCurrentUser, useModels } from '@/stores'
 
 interface MessageBubbleProps {
   message: Message
@@ -18,7 +19,22 @@ interface MessageBubbleProps {
 export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
   const [copied, setCopied] = useState(false)
   const user = useCurrentUser()
+  const models = useModels()
   const isUser = message.role === 'user'
+
+  // Get model info for the badge
+  const modelId = message.metadata?.model
+  const model = modelId ? models.find((m) => m.id === modelId) : null
+
+  // Determine provider from model ID if model config not found
+  const getProviderFromModelId = (id: string): AIProvider => {
+    if (id.startsWith('gpt-')) return 'openai'
+    if (id.startsWith('claude-')) return 'anthropic'
+    if (id.startsWith('glean-')) return 'glean'
+    if (id.startsWith('dust-')) return 'dust'
+    if (id.startsWith('ondobot-')) return 'ondobot'
+    return 'anthropic'
+  }
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(message.content)
@@ -71,6 +87,15 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
             <span className="inline-block w-2 h-4 ml-1 bg-current animate-pulse" />
           )}
         </div>
+
+        {/* Model Badge for assistant messages */}
+        {!isUser && modelId && (
+          <ModelBadge
+            modelId={modelId}
+            modelName={model?.name || modelId}
+            provider={model?.provider || getProviderFromModelId(modelId)}
+          />
+        )}
 
         {/* Actions */}
         <div

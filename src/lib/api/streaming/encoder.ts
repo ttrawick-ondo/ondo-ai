@@ -1,0 +1,102 @@
+import type { StreamEvent, StreamEventData, ChatCompletionResponse, TokenUsage, ChatCompletionMetadata } from '@/types'
+
+const encoder = new TextEncoder()
+
+export function encodeSSEEvent(event: StreamEvent): Uint8Array {
+  const data = JSON.stringify(event)
+  return encoder.encode(`data: ${data}\n\n`)
+}
+
+export function createStreamEvent(
+  type: StreamEvent['type'],
+  data: StreamEventData
+): StreamEvent {
+  return {
+    type,
+    data,
+    timestamp: Date.now(),
+  }
+}
+
+export function createStartEvent(id: string): StreamEvent {
+  return createStreamEvent('start', { id })
+}
+
+export function createDeltaEvent(delta: string): StreamEvent {
+  return createStreamEvent('delta', { delta })
+}
+
+export function createDoneEvent(
+  content: string,
+  usage: TokenUsage,
+  metadata: ChatCompletionMetadata
+): StreamEvent {
+  return createStreamEvent('done', { content, usage, metadata })
+}
+
+export function createErrorEvent(error: string): StreamEvent {
+  return createStreamEvent('error', { error })
+}
+
+export class SSEEncoder {
+  private id: string
+
+  constructor(id: string) {
+    this.id = id
+  }
+
+  start(): Uint8Array {
+    return encodeSSEEvent(createStartEvent(this.id))
+  }
+
+  delta(content: string): Uint8Array {
+    return encodeSSEEvent(createDeltaEvent(content))
+  }
+
+  done(content: string, usage: TokenUsage, metadata: ChatCompletionMetadata): Uint8Array {
+    return encodeSSEEvent(createDoneEvent(content, usage, metadata))
+  }
+
+  error(message: string): Uint8Array {
+    return encodeSSEEvent(createErrorEvent(message))
+  }
+}
+
+export function createSSEStream(
+  generator: AsyncGenerator<StreamEvent, void, unknown>
+): ReadableStream<Uint8Array> {
+  return new ReadableStream({
+    async start(controller) {
+      try {
+        for await (const event of generator) {
+          controller.enqueue(encodeSSEEvent(event))
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+        controller.enqueue(encodeSSEEvent(createErrorEvent(errorMessage)))
+      } finally {
+        controller.close()
+      }
+    },
+  })
+}
+
+export function parseSSEResponse(data: string): StreamEvent | null {
+  const lines = data.split('\n')
+
+  for (const line of lines) {
+    if (line.startsWith('data: ')) {
+      const jsonStr = line.slice(6)
+      if (jsonStr === '[DONE]') {
+        return null
+      }
+      try {
+        return JSON.parse(jsonStr) as StreamEvent
+      } catch {
+        return null
+      }
+    }
+  }
+
+  return null
+}
