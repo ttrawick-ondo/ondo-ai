@@ -2,11 +2,20 @@
   "name": "ondo-ai",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "agent": "node packages/agent/dist/bin/ondo-agent.js",
+    "agent:build": "npm run build -w @ondo-ai/agent",
+    "agent:dev": "npm run dev -w @ondo-ai/agent"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
@@ -42,16 +51,21 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.0",
+    "@testing-library/react": "^16.1.0",
     "@types/node": "^20.0.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
     "@types/react-syntax-highlighter": "^15.5.0",
+    "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.0",
     "eslint": "^8.0.0",
     "eslint-config-next": "^14.2.0",
+    "jsdom": "^25.0.1",
     "postcss": "^8.4.0",
     "tailwindcss": "^3.4.0",
     "tailwindcss-animate": "^1.0.7",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "vitest": "^3.0.0"
   }
 }

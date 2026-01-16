@@ -1,0 +1,41 @@
+{
+  "project": {
+    "name": "ondo-ai",
+    "srcDir": "src",
+    "testsDir": "tests",
+    "conventionDocs": ["docs/CONVENTIONS.md"],
+    "excludePatterns": [
+      "node_modules/**",
+      "dist/**",
+      "build/**",
+      ".next/**",
+      "coverage/**",
+      "*.d.ts"
+    ]
+  },
+  "defaults": {
+    "model": "claude-sonnet-4-20250514",
+    "maxIterations": 10,
+    "temperature": 0,
+    "maxTokens": 8192
+  },
+  "autonomy": {
+    "taskTypes": {
+      "test": "full",
+      "qa": "full",
+      "feature": "supervised",
+      "refactor": "supervised"
+    },
+    "maxAutoApprovals": 10,
+    "requireApprovalForDestructive": true
+  },
+  "testing": {
+    "framework": "vitest",
+    "coverageThreshold": {
+      "lines": 80,
+      "branches": 70,
+      "functions": 80
+    },
+    "testPattern": "**/*.test.ts"
+  }
+}
