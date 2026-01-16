@@ -5,6 +5,7 @@ export * from './workspace'
 export * from './prompt'
 export * from './model'
 export * from './api'
+export * from './tools'
 
 // API response types
 export interface ApiResponse<T> {

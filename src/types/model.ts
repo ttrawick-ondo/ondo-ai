@@ -73,3 +73,47 @@ export interface UpdateGleanAgentInput {
   dataSourceIds?: string[]
   temperature?: number
 }
+
+// Agent Testing Types
+export interface AgentTestQuery {
+  id: string
+  query: string
+  timestamp: Date
+}
+
+export interface AgentTestResult {
+  id: string
+  query: string
+  response: string
+  citations?: GleanCitation[]
+  processingTimeMs: number
+  timestamp: Date
+  error?: string
+}
+
+export interface GleanCitation {
+  id: string
+  title: string
+  url: string
+  snippet: string
+  source: string
+  sourceType: GleanDataSource['type']
+}
+
+export interface AgentTestSession {
+  id: string
+  agentConfig: AgentPreviewConfig
+  results: AgentTestResult[]
+  createdAt: Date
+}
+
+export interface AgentPreviewConfig {
+  name: string
+  description?: string
+  systemPrompt: string
+  dataSourceIds: string[]
+  temperature: number
+  // For distinguishing draft from saved
+  savedAgentId?: string
+  isDraft: boolean
+}

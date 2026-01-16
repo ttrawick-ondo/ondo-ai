@@ -83,10 +83,19 @@ export class GleanProvider extends BaseProvider {
 
     try {
       const gleanRequest: GleanChatRequest = {
-        messages: request.messages.map((msg) => ({
-          role: msg.role === 'user' ? 'user' : 'assistant',
-          content: msg.content,
-        })),
+        // Filter out tool messages (not supported by Glean)
+        messages: request.messages
+          .filter((msg) => msg.role !== 'tool')
+          .map((msg) => {
+            // Extract text content (Glean doesn't support images)
+            const textContent = typeof msg.content === 'string'
+              ? msg.content
+              : msg.content?.find((p) => p.type === 'text')?.text || ''
+            return {
+              role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
+              content: textContent,
+            }
+          }),
         stream: false,
       }
 
@@ -159,10 +168,19 @@ export class GleanProvider extends BaseProvider {
 
     try {
       const gleanRequest: GleanChatRequest = {
-        messages: request.messages.map((msg) => ({
-          role: msg.role === 'user' ? 'user' : 'assistant',
-          content: msg.content,
-        })),
+        // Filter out tool messages (not supported by Glean)
+        messages: request.messages
+          .filter((msg) => msg.role !== 'tool')
+          .map((msg) => {
+            // Extract text content (Glean doesn't support images)
+            const textContent = typeof msg.content === 'string'
+              ? msg.content
+              : msg.content?.find((p) => p.type === 'text')?.text || ''
+            return {
+              role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
+              content: textContent,
+            }
+          }),
         stream: true,
       }
 

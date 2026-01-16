@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Loader2, FlaskConical } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { GleanAgentTestPanel } from './GleanAgentTestPanel'
 import {
   useActiveModal,
   useUIActions,
@@ -22,7 +23,7 @@ import {
   useGleanDataSources,
   useActiveWorkspace,
 } from '@/stores'
-import type { GleanDataSource } from '@/types'
+import type { GleanDataSource, AgentPreviewConfig } from '@/types'
 
 export function GleanAgentCreator() {
   const activeModal = useActiveModal()
@@ -38,8 +39,19 @@ export function GleanAgentCreator() {
   const [selectedDataSources, setSelectedDataSources] = useState<string[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isTestPanelOpen, setIsTestPanelOpen] = useState(false)
 
   const isOpen = activeModal === 'create-glean-agent'
+
+  // Build preview config for testing
+  const previewConfig: AgentPreviewConfig = {
+    name: name.trim() || 'Untitled Agent',
+    description: description.trim() || undefined,
+    systemPrompt: systemPrompt.trim(),
+    dataSourceIds: selectedDataSources,
+    temperature,
+    isDraft: true,
+  }
 
   useEffect(() => {
     if (isOpen) {
@@ -199,16 +211,34 @@ export function GleanAgentCreator() {
           )}
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={handleClose} disabled={isSubmitting}>
-            Cancel
+        <DialogFooter className="flex-col sm:flex-row gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setIsTestPanelOpen(true)}
+            disabled={isSubmitting || !systemPrompt.trim()}
+            className="w-full sm:w-auto"
+          >
+            <FlaskConical className="mr-2 h-4 w-4" />
+            Test Agent
           </Button>
-          <Button onClick={handleSubmit} disabled={isSubmitting}>
-            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Create Agent
-          </Button>
+          <div className="flex gap-2 w-full sm:w-auto">
+            <Button variant="outline" onClick={handleClose} disabled={isSubmitting} className="flex-1 sm:flex-none">
+              Cancel
+            </Button>
+            <Button onClick={handleSubmit} disabled={isSubmitting} className="flex-1 sm:flex-none">
+              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Create Agent
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
+
+      {/* Test Panel */}
+      <GleanAgentTestPanel
+        isOpen={isTestPanelOpen}
+        onClose={() => setIsTestPanelOpen(false)}
+        config={previewConfig}
+      />
     </Dialog>
   )
 }

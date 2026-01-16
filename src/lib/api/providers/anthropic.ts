@@ -40,10 +40,8 @@ export class AnthropicProvider extends BaseProvider {
     try {
       const client = this.getClient()
 
-      const messages: Anthropic.MessageParam[] = request.messages.map((msg) => ({
-        role: msg.role === 'user' ? 'user' : 'assistant',
-        content: msg.content,
-      }))
+      // Build Anthropic message format with file support
+      const messages: Anthropic.MessageParam[] = this.buildMessages(request)
 
       const response = await client.messages.create({
         model: request.model,
@@ -100,10 +98,8 @@ export class AnthropicProvider extends BaseProvider {
     try {
       const client = this.getClient()
 
-      const messages: Anthropic.MessageParam[] = request.messages.map((msg) => ({
-        role: msg.role === 'user' ? 'user' : 'assistant',
-        content: msg.content,
-      }))
+      // Build Anthropic message format with file support
+      const messages: Anthropic.MessageParam[] = this.buildMessages(request)
 
       const stream = await client.messages.stream({
         model: request.model,
@@ -155,6 +151,123 @@ export class AnthropicProvider extends BaseProvider {
       const apiError = handleProviderError(error, 'anthropic')
       yield createErrorEvent(apiError.message)
     }
+  }
+
+  private buildMessages(
+    request: ChatCompletionRequest
+  ): Anthropic.MessageParam[] {
+    return request.messages
+      .filter((msg) => msg.role !== 'tool')
+      .map((msg) => {
+        // Handle messages with images or files
+        if (msg.role === 'user' && (msg.images?.length || msg.files?.length)) {
+          const contentBlocks: Anthropic.ContentBlockParam[] = []
+
+          // Add text content first if present
+          let textContent = typeof msg.content === 'string' ? msg.content : ''
+
+          // Append file contents
+          if (msg.files && msg.files.length > 0) {
+            const fileContents = msg.files
+              .filter((f) => f.content && f.status === 'ready')
+              .map((f) => {
+                if (f.fileType === 'code' && f.language) {
+                  return `\n\n--- File: ${f.name} ---\n\`\`\`${f.language}\n${f.content}\n\`\`\``
+                }
+                return `\n\n--- File: ${f.name} ---\n${f.content}`
+              })
+              .join('\n')
+
+            if (fileContents) {
+              textContent = textContent + fileContents
+            }
+          }
+
+          if (textContent) {
+            contentBlocks.push({
+              type: 'text',
+              text: textContent,
+            })
+          }
+
+          // Add images
+          if (msg.images) {
+            for (const image of msg.images) {
+              // Extract base64 data and media type
+              const base64Match = image.base64?.match(/^data:([^;]+);base64,(.+)$/)
+              if (base64Match) {
+                const mediaType = base64Match[1] as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
+                const data = base64Match[2]
+                contentBlocks.push({
+                  type: 'image',
+                  source: {
+                    type: 'base64',
+                    media_type: mediaType,
+                    data,
+                  },
+                })
+              }
+            }
+          }
+
+          return {
+            role: 'user' as const,
+            content: contentBlocks.length > 0 ? contentBlocks : '',
+          }
+        }
+
+        // Handle array content (already multi-modal)
+        if (Array.isArray(msg.content)) {
+          const contentBlocks: Anthropic.ContentBlockParam[] = msg.content.map((part) => {
+            if (part.type === 'text') {
+              return { type: 'text' as const, text: part.text }
+            } else {
+              // Convert image_url to Anthropic format
+              const base64Match = part.image_url.url.match(/^data:([^;]+);base64,(.+)$/)
+              if (base64Match) {
+                return {
+                  type: 'image' as const,
+                  source: {
+                    type: 'base64' as const,
+                    media_type: base64Match[1] as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
+                    data: base64Match[2],
+                  },
+                }
+              }
+              // Fallback - just use text
+              return { type: 'text' as const, text: '[Image]' }
+            }
+          })
+          return {
+            role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
+            content: contentBlocks,
+          }
+        }
+
+        // Regular text message - also handle file attachments
+        let content = (typeof msg.content === 'string' ? msg.content : '') || ''
+
+        if (msg.role === 'user' && msg.files && msg.files.length > 0) {
+          const fileContents = msg.files
+            .filter((f) => f.content && f.status === 'ready')
+            .map((f) => {
+              if (f.fileType === 'code' && f.language) {
+                return `\n\n--- File: ${f.name} ---\n\`\`\`${f.language}\n${f.content}\n\`\`\``
+              }
+              return `\n\n--- File: ${f.name} ---\n${f.content}`
+            })
+            .join('\n')
+
+          if (fileContents) {
+            content = content + fileContents
+          }
+        }
+
+        return {
+          role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
+          content,
+        }
+      })
   }
 
   private mapFinishReason(

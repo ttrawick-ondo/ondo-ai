@@ -60,10 +60,19 @@ export class OndoBotProvider extends BaseProvider {
 
     try {
       const ondoBotRequest: OndoBotRequest = {
-        messages: request.messages.map((msg) => ({
-          role: msg.role,
-          content: msg.content,
-        })),
+        // Filter out tool messages (not supported by OndoBot)
+        messages: request.messages
+          .filter((msg) => msg.role !== 'tool')
+          .map((msg) => {
+            // Extract text content (OndoBot doesn't support images)
+            const textContent = typeof msg.content === 'string'
+              ? msg.content
+              : msg.content?.find((p) => p.type === 'text')?.text || ''
+            return {
+              role: msg.role as 'user' | 'assistant' | 'system',
+              content: textContent,
+            }
+          }),
         stream: false,
       }
 
@@ -130,10 +139,19 @@ export class OndoBotProvider extends BaseProvider {
 
     try {
       const ondoBotRequest: OndoBotRequest = {
-        messages: request.messages.map((msg) => ({
-          role: msg.role,
-          content: msg.content,
-        })),
+        // Filter out tool messages (not supported by OndoBot)
+        messages: request.messages
+          .filter((msg) => msg.role !== 'tool')
+          .map((msg) => {
+            // Extract text content (OndoBot doesn't support images)
+            const textContent = typeof msg.content === 'string'
+              ? msg.content
+              : msg.content?.find((p) => p.type === 'text')?.text || ''
+            return {
+              role: msg.role as 'user' | 'assistant' | 'system',
+              content: textContent,
+            }
+          }),
         stream: true,
       }
 

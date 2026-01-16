@@ -1,4 +1,5 @@
-import type { StreamEvent, StreamEventData, ChatCompletionResponse, TokenUsage, ChatCompletionMetadata } from '@/types'
+import type { StreamEvent, StreamEventData, TokenUsage, ChatCompletionMetadata } from '@/types'
+import type { ToolCall } from '@/types/tools'
 
 const encoder = new TextEncoder()
 
@@ -38,6 +39,39 @@ export function createErrorEvent(error: string): StreamEvent {
   return createStreamEvent('error', { error })
 }
 
+export function createToolCallDeltaEvent(
+  index: number,
+  delta: {
+    id?: string
+    type?: 'function'
+    function?: {
+      name?: string
+      arguments?: string
+    }
+  }
+): StreamEvent {
+  return createStreamEvent('delta', {
+    tool_call_delta: {
+      index,
+      ...delta,
+    },
+  })
+}
+
+export function createToolCallsDoneEvent(
+  content: string | null,
+  toolCalls: ToolCall[],
+  usage: TokenUsage,
+  metadata: ChatCompletionMetadata
+): StreamEvent {
+  return createStreamEvent('done', {
+    content: content ?? undefined,
+    tool_calls: toolCalls,
+    usage,
+    metadata,
+  })
+}
+
 export class SSEEncoder {
   private id: string
 
@@ -53,8 +87,31 @@ export class SSEEncoder {
     return encodeSSEEvent(createDeltaEvent(content))
   }
 
+  toolCallDelta(
+    index: number,
+    delta: {
+      id?: string
+      type?: 'function'
+      function?: {
+        name?: string
+        arguments?: string
+      }
+    }
+  ): Uint8Array {
+    return encodeSSEEvent(createToolCallDeltaEvent(index, delta))
+  }
+
   done(content: string, usage: TokenUsage, metadata: ChatCompletionMetadata): Uint8Array {
     return encodeSSEEvent(createDoneEvent(content, usage, metadata))
+  }
+
+  toolCallsDone(
+    content: string | null,
+    toolCalls: ToolCall[],
+    usage: TokenUsage,
+    metadata: ChatCompletionMetadata
+  ): Uint8Array {
+    return encodeSSEEvent(createToolCallsDoneEvent(content, toolCalls, usage, metadata))
   }
 
   error(message: string): Uint8Array {

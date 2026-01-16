@@ -1,15 +1,19 @@
 'use client'
 
 import { useState } from 'react'
-import { Copy, Check, User, Bot, RotateCcw } from 'lucide-react'
+import { Copy, Check, User, Bot, RotateCcw, Wrench } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
 import { MarkdownRenderer } from './MarkdownRenderer'
+import { ToolCallDisplay, ToolResultDisplay } from './ToolCallDisplay'
+import { ContentWithCitations } from './CitedContent'
+import { FilePreviewList } from './FilePreview'
 import { ModelBadge } from '@/components/model'
-import type { Message, AIProvider } from '@/types'
-import { useCurrentUser, useModels } from '@/stores'
+import type { Message, AIProvider, ImageAttachment, FileAttachment } from '@/types'
+import { isFileAttachment } from '@/types'
+import { useCurrentUser, useModels, useIsExecutingTools } from '@/stores'
 
 interface MessageBubbleProps {
   message: Message
@@ -20,7 +24,12 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
   const [copied, setCopied] = useState(false)
   const user = useCurrentUser()
   const models = useModels()
+  const isExecutingTools = useIsExecutingTools()
   const isUser = message.role === 'user'
+  const isTool = message.role === 'tool'
+  const hasToolCalls = message.tool_calls && message.tool_calls.length > 0
+  const imageAttachments = message.attachments?.filter((a): a is ImageAttachment => a.type === 'image') || []
+  const fileAttachments = message.attachments?.filter((a): a is FileAttachment => isFileAttachment(a)) || []
 
   // Get model info for the badge
   const modelId = message.metadata?.model
@@ -37,9 +46,24 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
   }
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(message.content)
+    await navigator.clipboard.writeText(message.content || '')
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  // Tool result messages are rendered inline with less prominence
+  if (isTool) {
+    const execution = message.tool_executions?.[0]
+    return (
+      <div className="flex gap-4 pl-12">
+        <div className="flex-1 max-w-[85%]">
+          <ToolResultDisplay
+            toolCallId={message.tool_call_id || ''}
+            execution={execution}
+          />
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -79,9 +103,51 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
           )}
         >
           {isUser ? (
-            <p className="whitespace-pre-wrap text-sm">{message.content}</p>
+            <>
+              {imageAttachments.length > 0 && (
+                <div className={cn(
+                  'grid gap-2 mb-2',
+                  imageAttachments.length === 1 ? 'grid-cols-1' : 'grid-cols-2'
+                )}>
+                  {imageAttachments.map((img) => (
+                    <img
+                      key={img.id}
+                      src={img.url}
+                      alt={img.name}
+                      className="rounded-lg max-w-[250px] max-h-[250px] object-cover"
+                    />
+                  ))}
+                </div>
+              )}
+              {fileAttachments.length > 0 && (
+                <div className="mb-2">
+                  <FilePreviewList files={fileAttachments} showContent />
+                </div>
+              )}
+              {message.content && (
+                <p className="whitespace-pre-wrap text-sm">{message.content}</p>
+              )}
+            </>
           ) : (
-            <MarkdownRenderer content={message.content} />
+            <>
+              {message.content && (
+                message.citations && message.citations.length > 0 ? (
+                  <ContentWithCitations
+                    content={message.content}
+                    citations={message.citations}
+                  />
+                ) : (
+                  <MarkdownRenderer content={message.content} />
+                )
+              )}
+              {hasToolCalls && (
+                <ToolCallDisplay
+                  toolCalls={message.tool_calls!}
+                  executions={message.tool_executions}
+                  isExecuting={isExecutingTools}
+                />
+              )}
+            </>
           )}
           {isStreaming && (
             <span className="inline-block w-2 h-4 ml-1 bg-current animate-pulse" />

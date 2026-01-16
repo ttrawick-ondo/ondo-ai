@@ -82,7 +82,7 @@ export abstract class BaseProvider implements AIProviderInterface {
 
   async countTokens(messages: ChatCompletionRequest['messages']): Promise<number> {
     // Default implementation: estimate ~4 chars per token
-    const totalChars = messages.reduce((sum, msg) => sum + msg.content.length, 0)
+    const totalChars = messages.reduce((sum, msg) => sum + (msg.content?.length || 0), 0)
     return Math.ceil(totalChars / 4)
   }
 

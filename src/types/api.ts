@@ -1,5 +1,6 @@
 import type { AIProvider, ModelConfig } from './model'
-import type { Message, MessageRole } from './chat'
+import type { Message, MessageRole, ContentPart, ImageAttachment, FileAttachment } from './chat'
+import type { ToolAPIFormat, ToolCall } from './tools'
 
 // Chat completion request
 export interface ChatCompletionRequest {
@@ -11,9 +12,17 @@ export interface ChatCompletionRequest {
 }
 
 export interface ChatCompletionMessage {
-  role: MessageRole
-  content: string
+  role: MessageRole | 'tool'
+  content: string | ContentPart[] // String for text-only, array for multi-modal
   name?: string
+  // For assistant messages that include tool calls
+  tool_calls?: ToolCall[]
+  // For tool response messages
+  tool_call_id?: string
+  // Image attachments (will be converted to content parts)
+  images?: ImageAttachment[]
+  // File attachments (content will be added to context)
+  files?: FileAttachment[]
 }
 
 export interface ChatCompletionOptions {
@@ -22,6 +31,10 @@ export interface ChatCompletionOptions {
   topP?: number
   stream?: boolean
   systemPrompt?: string
+  // Tool-related options
+  tools?: ToolAPIFormat[]
+  tool_choice?: 'auto' | 'none' | 'required' | { type: 'function'; function: { name: string } }
+  parallel_tool_calls?: boolean
 }
 
 // Chat completion response
@@ -29,7 +42,8 @@ export interface ChatCompletionResponse {
   id: string
   message: {
     role: 'assistant'
-    content: string
+    content: string | null
+    tool_calls?: ToolCall[]
   }
   metadata: ChatCompletionMetadata
   usage: TokenUsage
@@ -39,7 +53,7 @@ export interface ChatCompletionMetadata {
   model: string
   provider: AIProvider
   processingTimeMs: number
-  finishReason: 'stop' | 'length' | 'content_filter' | 'error'
+  finishReason: 'stop' | 'length' | 'content_filter' | 'error' | 'tool_calls'
 }
 
 // Token usage tracking
@@ -70,6 +84,17 @@ export interface StreamEventData {
   usage?: TokenUsage
   error?: string
   metadata?: ChatCompletionMetadata
+  // Tool call streaming support
+  tool_calls?: ToolCall[]
+  tool_call_delta?: {
+    index: number
+    id?: string
+    type?: 'function'
+    function?: {
+      name?: string
+      arguments?: string
+    }
+  }
 }
 
 // Provider list response
@@ -90,6 +115,7 @@ export interface ProviderInfo {
 export interface StreamCallbacks {
   onStart?: () => void
   onDelta?: (delta: string) => void
+  onToolCallDelta?: (delta: StreamEventData['tool_call_delta']) => void
   onDone?: (response: ChatCompletionResponse) => void
   onError?: (error: string) => void
 }

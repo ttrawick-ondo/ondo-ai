@@ -64,16 +64,23 @@ export class DustProvider extends BaseProvider {
     }
 
     try {
-      // Get the last user message
-      const lastUserMessage = [...request.messages].reverse().find((m) => m.role === 'user')
+      // Get the last user message (filter out tool messages)
+      const lastUserMessage = [...request.messages]
+        .reverse()
+        .find((m) => m.role === 'user' && m.content)
 
       if (!lastUserMessage) {
         throw new APIError('No user message provided')
       }
 
+      // Extract text content (Dust doesn't support images)
+      const textContent = typeof lastUserMessage.content === 'string'
+        ? lastUserMessage.content
+        : lastUserMessage.content?.find((p) => p.type === 'text')?.text || ''
+
       const dustRequest: DustConversationRequest = {
         message: {
-          content: lastUserMessage.content,
+          content: textContent,
         },
         blocking: true,
       }
@@ -155,15 +162,23 @@ export class DustProvider extends BaseProvider {
     yield createStartEvent(id)
 
     try {
-      const lastUserMessage = [...request.messages].reverse().find((m) => m.role === 'user')
+      // Get the last user message (filter out tool messages)
+      const lastUserMessage = [...request.messages]
+        .reverse()
+        .find((m) => m.role === 'user' && m.content)
 
       if (!lastUserMessage) {
         throw new APIError('No user message provided')
       }
 
+      // Extract text content (Dust doesn't support images)
+      const textContent = typeof lastUserMessage.content === 'string'
+        ? lastUserMessage.content
+        : lastUserMessage.content?.find((p) => p.type === 'text')?.text || ''
+
       const dustRequest: DustConversationRequest = {
         message: {
-          content: lastUserMessage.content,
+          content: textContent,
         },
         blocking: false,
       }

@@ -137,14 +137,18 @@ export class ChatClient {
               if (event.data.delta) {
                 callbacks.onDelta?.(event.data.delta)
               }
+              if (event.data.tool_call_delta) {
+                callbacks.onToolCallDelta?.(event.data.tool_call_delta)
+              }
               break
             case 'done':
-              if (event.data.content && event.data.usage && event.data.metadata) {
+              if (event.data.usage && event.data.metadata) {
                 callbacks.onDone?.({
                   id: event.data.id || '',
                   message: {
                     role: 'assistant',
-                    content: event.data.content,
+                    content: event.data.content ?? null,
+                    ...(event.data.tool_calls && { tool_calls: event.data.tool_calls }),
                   },
                   metadata: event.data.metadata,
                   usage: event.data.usage,
