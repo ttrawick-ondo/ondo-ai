@@ -3,11 +3,17 @@ import type {
   ChatCompletionResponse,
   StreamEvent,
   TokenUsage,
-  GleanAgentConfig,
   GleanDataSource,
-  CreateGleanAgentInput,
-  UpdateGleanAgentInput,
 } from '@/types'
+import type {
+  GleanAgent,
+  GleanAgentSearchRequest,
+  GleanAgentSearchResponse,
+  GleanAgentRunRequest,
+  GleanAgentRunResponse,
+  GleanAgentSchema,
+  GleanCitation,
+} from '../glean/types'
 import { BaseProvider } from './base'
 import { getModelConfig } from '../config/providers'
 import { handleProviderError, ModelNotFoundError, APIError } from '../errors/apiErrors'
@@ -28,25 +34,14 @@ interface GleanChatResponse {
     role: 'assistant'
     content: string
   }
-  citations?: GleanCitation[]
+  citations?: GleanInternalCitation[]
 }
 
-interface GleanCitation {
+interface GleanInternalCitation {
   title: string
   url: string
   snippet: string
   source: string
-}
-
-interface GleanAgentAPIResponse {
-  id: string
-  name: string
-  description?: string
-  systemPrompt: string
-  dataSources: string[]
-  temperature: number
-  createdAt: string
-  updatedAt: string
 }
 
 export class GleanProvider extends BaseProvider {
@@ -206,7 +201,7 @@ export class GleanProvider extends BaseProvider {
 
       const decoder = new TextDecoder()
       let fullContent = ''
-      let citations: GleanCitation[] = []
+      let citations: GleanInternalCitation[] = []
 
       while (true) {
         const { done, value } = await reader.read()
@@ -265,121 +260,189 @@ export class GleanProvider extends BaseProvider {
     }
   }
 
-  // Glean Agent Management
-  async listAgents(workspaceId: string): Promise<GleanAgentConfig[]> {
+  // ==========================================================================
+  // Glean Agents API (Real API)
+  // Reference: https://developers.glean.com/api/client-api/agents/overview
+  //
+  // NOTE: Agent creation, update, and deletion are NOT supported via API.
+  // Agents must be created and configured via the Glean Agent Builder UI.
+  // This API only supports listing, reading, and executing agents.
+  // ==========================================================================
+
+  /**
+   * Search for agents by name
+   * Uses POST /rest/api/v1/agents/search
+   */
+  async searchAgents(request?: GleanAgentSearchRequest): Promise<GleanAgentSearchResponse> {
     try {
       const response = await fetch(
-        `${this.getBaseUrl()}/agents?workspaceId=${workspaceId}`,
+        `${this.getBaseUrl()}/rest/api/v1/agents/search`,
+        {
+          method: 'POST',
+          headers: this.getHeaders(),
+          body: JSON.stringify({
+            query: request?.query || '',
+            pageSize: request?.pageSize || 20,
+            cursor: request?.cursor,
+          }),
+        }
+      )
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new APIError(`Failed to search agents: ${errorText}`, response.status)
+      }
+
+      return response.json()
+    } catch (error) {
+      throw handleProviderError(error, 'glean')
+    }
+  }
+
+  /**
+   * Get agent metadata (read-only)
+   * Uses GET /rest/api/v1/agents/{agent_id}
+   */
+  async getAgent(agentId: string): Promise<GleanAgent> {
+    try {
+      const response = await fetch(
+        `${this.getBaseUrl()}/rest/api/v1/agents/${agentId}`,
         {
           headers: this.getHeaders(),
         }
       )
 
       if (!response.ok) {
-        throw new APIError(`Failed to list agents: ${response.status}`)
+        const errorText = await response.text()
+        throw new APIError(`Failed to get agent: ${errorText}`, response.status)
       }
 
-      const data: GleanAgentAPIResponse[] = await response.json()
-
-      return data.map((agent) => this.mapAgentResponse(agent, workspaceId))
+      return response.json()
     } catch (error) {
       throw handleProviderError(error, 'glean')
     }
   }
 
-  async getAgent(agentId: string): Promise<GleanAgentConfig> {
+  /**
+   * Get agent input/output schemas
+   * Uses GET /rest/api/v1/agents/{agent_id}/schemas
+   */
+  async getAgentSchemas(agentId: string): Promise<GleanAgentSchema> {
     try {
-      const response = await fetch(`${this.getBaseUrl()}/agents/${agentId}`, {
-        headers: this.getHeaders(),
-      })
-
-      if (!response.ok) {
-        throw new APIError(`Failed to get agent: ${response.status}`)
-      }
-
-      const data: GleanAgentAPIResponse = await response.json()
-      return this.mapAgentResponse(data, '')
-    } catch (error) {
-      throw handleProviderError(error, 'glean')
-    }
-  }
-
-  async createAgent(
-    workspaceId: string,
-    input: CreateGleanAgentInput
-  ): Promise<GleanAgentConfig> {
-    try {
-      const response = await fetch(`${this.getBaseUrl()}/agents`, {
-        method: 'POST',
-        headers: this.getHeaders(),
-        body: JSON.stringify({
-          workspaceId,
-          name: input.name,
-          description: input.description,
-          systemPrompt: input.systemPrompt,
-          dataSources: input.dataSourceIds,
-          temperature: input.temperature ?? 0.7,
-        }),
-      })
+      const response = await fetch(
+        `${this.getBaseUrl()}/rest/api/v1/agents/${agentId}/schemas`,
+        {
+          headers: this.getHeaders(),
+        }
+      )
 
       if (!response.ok) {
         const errorText = await response.text()
-        throw new APIError(`Failed to create agent: ${errorText}`, response.status)
+        throw new APIError(`Failed to get agent schemas: ${errorText}`, response.status)
       }
 
-      const data: GleanAgentAPIResponse = await response.json()
-      return this.mapAgentResponse(data, workspaceId)
+      return response.json()
     } catch (error) {
       throw handleProviderError(error, 'glean')
     }
   }
 
-  async updateAgent(
-    agentId: string,
-    input: UpdateGleanAgentInput
-  ): Promise<GleanAgentConfig> {
+  /**
+   * Execute an agent (blocking mode)
+   * Uses POST /rest/api/v1/agents/runs/wait
+   */
+  async runAgentBlocking(request: GleanAgentRunRequest): Promise<GleanAgentRunResponse> {
     try {
-      const response = await fetch(`${this.getBaseUrl()}/agents/${agentId}`, {
-        method: 'PUT',
-        headers: this.getHeaders(),
-        body: JSON.stringify({
-          name: input.name,
-          description: input.description,
-          systemPrompt: input.systemPrompt,
-          dataSources: input.dataSourceIds,
-          temperature: input.temperature,
-        }),
-      })
+      const response = await fetch(
+        `${this.getBaseUrl()}/rest/api/v1/agents/runs/wait`,
+        {
+          method: 'POST',
+          headers: this.getHeaders(),
+          body: JSON.stringify(request),
+        }
+      )
 
       if (!response.ok) {
-        throw new APIError(`Failed to update agent: ${response.status}`)
+        const errorText = await response.text()
+        throw new APIError(`Failed to run agent: ${errorText}`, response.status)
       }
 
-      const data: GleanAgentAPIResponse = await response.json()
-      return this.mapAgentResponse(data, '')
+      return response.json()
     } catch (error) {
       throw handleProviderError(error, 'glean')
     }
   }
 
-  async deleteAgent(agentId: string): Promise<void> {
+  /**
+   * Execute an agent (streaming mode)
+   * Uses POST /rest/api/v1/agents/runs/stream
+   * Returns an async generator that yields stream events
+   */
+  async *runAgentStream(
+    request: GleanAgentRunRequest
+  ): AsyncGenerator<{ type: string; content?: string; citations?: GleanCitation[]; error?: string }> {
     try {
-      const response = await fetch(`${this.getBaseUrl()}/agents/${agentId}`, {
-        method: 'DELETE',
-        headers: this.getHeaders(),
-      })
+      const response = await fetch(
+        `${this.getBaseUrl()}/rest/api/v1/agents/runs/stream`,
+        {
+          method: 'POST',
+          headers: {
+            ...this.getHeaders(),
+            Accept: 'text/event-stream',
+          },
+          body: JSON.stringify(request),
+        }
+      )
 
       if (!response.ok) {
-        throw new APIError(`Failed to delete agent: ${response.status}`)
+        const errorText = await response.text()
+        throw new APIError(`Failed to stream agent run: ${errorText}`, response.status)
+      }
+
+      const reader = response.body?.getReader()
+      if (!reader) {
+        throw new APIError('No response body')
+      }
+
+      const decoder = new TextDecoder()
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        const chunk = decoder.decode(value, { stream: true })
+        const lines = chunk.split('\n')
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6)
+            if (data === '[DONE]') {
+              yield { type: 'done' }
+              continue
+            }
+
+            try {
+              const parsed = JSON.parse(data)
+              yield parsed
+            } catch {
+              // Ignore parse errors
+            }
+          }
+        }
       }
     } catch (error) {
-      throw handleProviderError(error, 'glean')
+      const apiError = handleProviderError(error, 'glean')
+      yield { type: 'error', error: apiError.message }
     }
   }
 
+  /**
+   * List available data sources
+   * Uses GET /api/v1/datasources (standard Glean API)
+   */
   async listDataSources(): Promise<GleanDataSource[]> {
     try {
-      const response = await fetch(`${this.getBaseUrl()}/datasources`, {
+      const response = await fetch(`${this.getBaseUrl()}/api/v1/datasources`, {
         headers: this.getHeaders(),
       })
 
@@ -388,46 +451,36 @@ export class GleanProvider extends BaseProvider {
       }
 
       interface GleanDataSourceResponse {
-        id: string
-        type: string
-        name: string
-        description?: string
-        isEnabled: boolean
+        datasources: Array<{
+          name: string
+          displayName: string
+          datasourceCategory: string
+          isEnabled?: boolean
+        }>
       }
 
-      const data: GleanDataSourceResponse[] = await response.json()
+      const data: GleanDataSourceResponse = await response.json()
 
-      return data.map((ds) => ({
-        id: ds.id,
-        type: ds.type as GleanDataSource['type'],
-        name: ds.name,
-        description: ds.description,
-        isEnabled: ds.isEnabled,
+      return data.datasources.map((ds) => ({
+        id: ds.name,
+        type: this.mapDatasourceCategory(ds.datasourceCategory),
+        name: ds.displayName || ds.name,
+        isEnabled: ds.isEnabled ?? true,
       }))
     } catch (error) {
       throw handleProviderError(error, 'glean')
     }
   }
 
-  private mapAgentResponse(
-    agent: GleanAgentAPIResponse,
-    workspaceId: string
-  ): GleanAgentConfig {
-    return {
-      id: agent.id,
-      name: agent.name,
-      description: agent.description,
-      systemPrompt: agent.systemPrompt,
-      dataSources: agent.dataSources.map((dsId) => ({
-        id: dsId,
-        type: 'custom' as const,
-        name: dsId,
-        isEnabled: true,
-      })),
-      temperature: agent.temperature,
-      workspaceId,
-      createdAt: new Date(agent.createdAt),
-      updatedAt: new Date(agent.updatedAt),
+  private mapDatasourceCategory(category: string): GleanDataSource['type'] {
+    const mapping: Record<string, GleanDataSource['type']> = {
+      'content_management': 'confluence',
+      'communication': 'slack',
+      'code_repository': 'github',
+      'project_management': 'jira',
+      'file_storage': 'gdrive',
+      'documentation': 'notion',
     }
+    return mapping[category.toLowerCase()] || 'custom'
   }
 }

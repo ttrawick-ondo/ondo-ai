@@ -16,3 +16,4 @@ export { SourceTypeIcon, getSourceTypeLabel, getSourceTypeColor } from './Source
 export { CitationInline } from './CitationInline'
 export { CitationsList, CitationsCount } from './CitationsList'
 export { CitedContent, ContentWithCitations } from './CitedContent'
+export { RoutingIndicator, RoutingIndicatorCompact } from './RoutingIndicator'

@@ -4,6 +4,7 @@ import { getProviderForModel } from '@/lib/api/providers'
 import { createSSEStream } from '@/lib/api/streaming/encoder'
 import { APIError, ValidationError } from '@/lib/api/errors/apiErrors'
 import { chatLogger, logChatCompletion } from '@/lib/logging'
+import { getRouteForRequest, getRoutingConfig } from '@/lib/api/routing'
 
 export async function POST(request: NextRequest) {
   const requestId = crypto.randomUUID()
@@ -39,6 +40,23 @@ export async function POST(request: NextRequest) {
       },
     }
 
+    // Determine routing - check if auto-routing is enabled
+    const routingConfig = getRoutingConfig()
+    const autoRouting = body.options?.autoRouting ?? routingConfig.autoRoutingEnabled
+
+    const route = await getRouteForRequest(chatRequest, {
+      autoRouting,
+      confidenceThreshold: routingConfig.confidenceThreshold,
+      providerPreferences: body.options?.providerPreferences,
+      modelOverrides: body.options?.modelOverrides,
+    })
+
+    // Update request with routed model/provider if auto-routed
+    if (route.wasAutoRouted) {
+      chatRequest.model = route.model
+      chatRequest.provider = route.provider
+    }
+
     const provider = getProviderForModel(chatRequest.model)
 
     chatLogger.info('Chat request received', {
@@ -49,7 +67,19 @@ export async function POST(request: NextRequest) {
       messageCount: chatRequest.messages.length,
       streaming: chatRequest.options?.stream !== false,
       hasTools: !!(chatRequest.options?.tools?.length),
+      autoRouted: route.wasAutoRouted,
+      intent: route.classification?.intent,
     })
+
+    // Build routing headers for transparency
+    const routingHeaders: Record<string, string> = {
+      'X-Request-Id': requestId,
+      'X-Routed-By': route.wasAutoRouted ? routingConfig.mode : 'explicit',
+    }
+    if (route.classification) {
+      routingHeaders['X-Intent'] = route.classification.intent
+      routingHeaders['X-Intent-Confidence'] = route.classification.confidence.toFixed(2)
+    }
 
     // Check if streaming is requested
     if (chatRequest.options?.stream !== false) {
@@ -60,7 +90,7 @@ export async function POST(request: NextRequest) {
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache',
           Connection: 'keep-alive',
-          'X-Request-Id': requestId,
+          ...routingHeaders,
         },
       })
     }
@@ -78,7 +108,7 @@ export async function POST(request: NextRequest) {
       success: true,
     })
 
-    return NextResponse.json(response)
+    return NextResponse.json(response, { headers: routingHeaders })
   } catch (error) {
     const duration = Date.now() - startTime
 

@@ -9,6 +9,7 @@ import { calculateTool } from './calculate'
 import { webSearchTool } from './web-search'
 import { generateImageTool } from './generate-image'
 import { gleanSearchTool } from './glean-search'
+import { executeActionTool } from './execute-action'
 
 // Export individual tools
 export { getCurrentTimeTool } from './get-current-time'
@@ -16,6 +17,7 @@ export { calculateTool } from './calculate'
 export { webSearchTool } from './web-search'
 export { generateImageTool } from './generate-image'
 export { gleanSearchTool } from './glean-search'
+export { executeActionTool } from './execute-action'
 
 // All built-in tools
 export const builtinTools = [
@@ -24,6 +26,7 @@ export const builtinTools = [
   webSearchTool,
   generateImageTool,
   gleanSearchTool,
+  executeActionTool,
 ]
 
 /**

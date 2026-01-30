@@ -274,6 +274,190 @@ Total cost: $300-600K/year (but justified with data)
 
 ---
 
+### Option E: Glean as Primary Interface (No Custom UI)
+**Best for**: Organizations willing to pay for Glean and wanting to minimize engineering effort
+
+**The Idea**: Instead of building Ondo-AI as a custom frontend that calls Glean, make Glean THE interface. Build custom Glean agents that call OndoBot and other internal APIs.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              OPTION E: GLEAN-FIRST                           │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │  Glean (Primary Interface)                            │  │
+│  │  • Enterprise search across all sources              │  │
+│  │  • Knowledge graph & entity resolution               │  │
+│  │  • Built-in chat UI                                  │  │
+│  │  • Permissions & compliance                          │  │
+│  └────────────────────────┬─────────────────────────────┘  │
+│                           │                                 │
+│  ┌────────────────────────┴─────────────────────────────┐  │
+│  │  Custom Glean Agents (you build these)               │  │
+│  ├──────────────────────────────────────────────────────┤  │
+│  │                                                      │  │
+│  │  ┌────────────┐  ┌────────────┐  ┌────────────┐     │  │
+│  │  │ OndoBot    │  │ Internal   │  │ Custom     │     │  │
+│  │  │ Agent      │  │ Tools      │  │ Workflows  │     │  │
+│  │  │            │  │ Agent      │  │ Agent      │     │  │
+│  │  │ • Employee │  │ • HubSpot  │  │ • Onboard  │     │  │
+│  │  │   lookup   │  │   (write)  │  │   new hire │     │  │
+│  │  │ • Policies │  │ • Fathom   │  │ • Expense  │     │  │
+│  │  │ • Benefits │  │   (query)  │  │   approval │     │  │
+│  │  │ • IT help  │  │ • Custom   │  │ • PTO      │     │  │
+│  │  │            │  │   APIs     │  │   request  │     │  │
+│  │  └────────────┘  └────────────┘  └────────────┘     │  │
+│  │                                                      │  │
+│  └──────────────────────────────────────────────────────┘  │
+│                           │                                 │
+│  ┌────────────────────────┴─────────────────────────────┐  │
+│  │  Backend Services (existing)                          │  │
+│  ├──────────┬──────────┬──────────┬──────────┬─────────┤  │
+│  │ OndoBot  │ HubSpot  │ Fathom   │ Internal │ Custom  │  │
+│  │  API     │   API    │   API    │   DBs    │  APIs   │  │
+│  └──────────┴──────────┴──────────┴──────────┴─────────┘  │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**What You Build**:
+1. **Glean Agent definitions** - JSON/YAML configs that define agent behavior
+2. **API endpoints** for Glean to call (thin wrappers around existing services)
+3. **Action handlers** for write operations Glean can't do natively
+
+**What You Don't Build**:
+- ❌ Chat UI
+- ❌ Search infrastructure
+- ❌ Authentication/SSO
+- ❌ Permissions system
+- ❌ Multi-model routing
+- ❌ Conversation management
+
+**Effort**: 2-4 weeks (agent definitions + API endpoints)
+**Cost**: $300-600K/year (Glean) + minimal engineering
+**What you get**: Enterprise-grade everything + custom internal tools
+
+### Glean Agent Architecture
+
+Glean supports custom agents via their [Assistant API](https://developers.glean.com/docs/assistant_api/):
+
+```typescript
+// Example: OndoBot Agent Definition
+{
+  "name": "OndoBot Assistant",
+  "description": "Ask questions about company policies, benefits, IT, and employee info",
+  "instructions": "You help employees find information about company policies...",
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "search_ondobot",
+        "description": "Search OndoBot knowledge base",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": { "type": "string" }
+          }
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "get_employee",
+        "description": "Get employee details by email",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "email": { "type": "string" }
+          }
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "submit_it_ticket",
+        "description": "Create an IT support ticket",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "title": { "type": "string" },
+            "description": { "type": "string" },
+            "priority": { "enum": ["low", "medium", "high"] }
+          }
+        }
+      }
+    }
+  ]
+}
+```
+
+```typescript
+// Backend: API endpoint for Glean to call
+// src/app/api/glean-actions/ondobot/route.ts
+
+export async function POST(req: Request) {
+  const { action, parameters } = await req.json()
+
+  switch (action) {
+    case 'search_ondobot':
+      return Response.json(await ondoBotAPI.search(parameters.query))
+
+    case 'get_employee':
+      return Response.json(await ondoBotAPI.getEmployee(parameters.email))
+
+    case 'submit_it_ticket':
+      return Response.json(await jiraAPI.createTicket({
+        project: 'IT',
+        ...parameters
+      }))
+  }
+}
+```
+
+### Comparison: Option A vs Option E
+
+| Aspect | Option A (Ondo-AI + Glean) | Option E (Glean Only) |
+|--------|---------------------------|----------------------|
+| **Primary UI** | Ondo-AI (custom) | Glean |
+| **Engineering effort** | Medium (maintain UI + integration) | Low (agents + APIs only) |
+| **Model flexibility** | Full (GPT-4, Claude, etc.) | Glean's models only |
+| **Customization** | High (your UI, your rules) | Limited to Glean's UX |
+| **User training** | New interface to learn | Uses existing Glean |
+| **Maintenance** | UI + integrations | Agents + APIs only |
+| **Unique capabilities** | Custom workflows, multi-model | Unified search + agents |
+
+### When to Choose Option E
+
+**Choose Option E if:**
+- ✅ You're already paying for Glean (or will be)
+- ✅ Users are already comfortable with Glean
+- ✅ You don't need multi-model flexibility
+- ✅ You want minimal engineering investment
+- ✅ Custom UI isn't a differentiator for your use case
+
+**Choose Option A instead if:**
+- ❌ You need to use specific models (Claude, GPT-4, etc.)
+- ❌ You want full control over the UX
+- ❌ You have unique workflow requirements
+- ❌ Multi-provider routing is important
+
+### What Happens to Ondo-AI?
+
+If you go with Option E, Ondo-AI becomes:
+
+1. **Agent backend** - API endpoints that Glean agents call
+2. **Internal tool** - For dev/admin use cases where Glean isn't appropriate
+3. **Deprecated** - If Glean covers all use cases
+
+**Realistic path**:
+- Keep Ondo-AI for internal/dev use
+- Build new features as Glean agents first
+- Evaluate in 6 months whether Ondo-AI adds value
+
+---
+
 ## In-House MCP Development
 
 ### What's Realistic with 1-2 Engineers
@@ -505,9 +689,20 @@ export async function loadMCPTools(): Promise<Tool[]> {
 | Your Situation | Recommended Path |
 |----------------|------------------|
 | Budget exists, need it fast | **Option A**: Glean + Ondo-AI + MCPs |
+| Budget exists, minimize eng effort | **Option E**: Glean as primary UI, custom agents |
 | Budget tight, have patience | **Option B**: Onyx + Ondo-AI + MCPs |
 | Uncertain requirements | **Option D**: Phased approach with decision points |
 | Just need agent tools | **Option C**: MCP-only, skip search infrastructure |
+
+### Option Comparison
+
+| Option | Glean Cost | Eng Effort | Custom UI | Search Quality | Write Ops |
+|--------|------------|------------|-----------|----------------|-----------|
+| **A**: Glean + Ondo-AI | $300-600K | Medium | ✅ Full | Excellent | ✅ MCPs |
+| **B**: Onyx + Ondo-AI | $0 | High | ✅ Full | Good (80%) | ✅ MCPs |
+| **C**: MCP-only | $0 | Low | ✅ Full | Basic | ✅ MCPs |
+| **D**: Phased | TBD | Medium | ✅ Full | TBD | ✅ MCPs |
+| **E**: Glean-first | $300-600K | **Low** | ❌ Glean's | Excellent | ✅ Agents |
 
 ---
 
@@ -520,32 +715,84 @@ Given:
 - 1-2 engineers available
 - Expanding scope expectations
 
-**Do**:
+**The Key Question**: Is a custom UI a differentiator, or is it just engineering overhead?
+
+**If custom UI matters** (multi-model, specific workflows):
 1. Add MCP tools to existing agent framework (Phase 1)
 2. Evaluate Onyx vs Glean with real data (Phase 2)
 3. Make data-driven build/buy decision (Phase 3)
 
+**If custom UI doesn't matter** (just need search + internal tools):
+1. Commit to Glean as the primary interface (Option E)
+2. Build Glean agents that call OndoBot and internal APIs
+3. Repurpose Ondo-AI engineers to build agent backends
+
+**The honest assessment**:
+- Ondo-AI's current value: multi-model chat + prompt templates
+- Glean's value: enterprise search + knowledge graph + compliance
+- If you're paying $300-600K/year for Glean anyway, why maintain a separate UI?
+
+**Do**:
+1. Decide if custom UI is worth the engineering investment
+2. If yes → Option A or B
+3. If no → Option E (Glean-first)
+
 **Don't**:
 1. Try to build Glean from scratch
-2. Commit to a path without proving value first
+2. Maintain two chat interfaces (Ondo-AI + Glean)
 3. Let scope creep turn 4 weeks into 12 months
 
 ---
 
 ## Appendix: Cost Comparison
 
-| Item | Glean | Onyx + MCP | Full DIY |
-|------|-------|------------|----------|
-| Software license | $300-600K/yr | $0 | $0 |
-| Infrastructure | Included | $20-40K/yr | $30-50K/yr |
-| Engineering (setup) | 2 weeks | 2-3 months | 12+ months |
-| Engineering (maintain) | 0 | 20% of 1 FTE | 50%+ of 2 FTEs |
-| Search quality | Excellent | Good | Basic-Good |
-| Time to value | 2 weeks | 2-3 months | 12+ months |
-| Write operations | Limited | Full (MCPs) | Full |
-| Compliance | Included | DIY | DIY |
+| Item | Option E (Glean-first) | Option A (Glean + Ondo-AI) | Option B (Onyx) | Full DIY |
+|------|------------------------|---------------------------|-----------------|----------|
+| Software license | $300-600K/yr | $300-600K/yr | $0 | $0 |
+| Infrastructure | Included | Included + Ondo-AI hosting | $20-40K/yr | $30-50K/yr |
+| Engineering (setup) | 2-4 weeks | 4-6 weeks | 2-3 months | 12+ months |
+| Engineering (maintain) | 10% of 1 FTE | 30% of 1 FTE | 20% of 1 FTE | 50%+ of 2 FTEs |
+| Custom UI | ❌ Use Glean | ✅ Ondo-AI | ✅ Ondo-AI | ✅ Custom |
+| Search quality | Excellent | Excellent | Good | Basic-Good |
+| Time to value | 2-4 weeks | 4-6 weeks | 2-3 months | 12+ months |
+| Write operations | Via agents | Full (MCPs) | Full (MCPs) | Full |
+| Compliance | Included | Included | DIY | DIY |
 
 **5-Year Total Cost of Ownership**:
-- Glean: $1.5-3M
-- Onyx + MCP: $200-400K + engineering time
-- Full DIY: $2-4M (mostly engineering)
+- **Option E (Glean-first)**: $1.5-3M (lowest eng overhead)
+- **Option A (Glean + Ondo-AI)**: $1.5-3M + $100-200K eng time
+- **Option B (Onyx + Ondo-AI)**: $200-400K + significant eng time
+- **Full DIY**: $2-4M (mostly engineering)
+
+### The Real Question
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│                 IS CUSTOM UI WORTH IT?                          │
+├────────────────────────────────────────────────────────────────┤
+│                                                                │
+│  Custom UI (Options A, B, C, D) gives you:                     │
+│  ├─ Multi-model flexibility (GPT-4, Claude, etc.)             │
+│  ├─ Custom workflows and prompt templates                      │
+│  ├─ Full control over UX                                       │
+│  └─ Differentiation from standard tools                        │
+│                                                                │
+│  Custom UI costs you:                                          │
+│  ├─ 20-50% of an engineer's time (ongoing)                    │
+│  ├─ UI maintenance and bug fixes                               │
+│  ├─ Feature requests and scope creep                           │
+│  └─ Two interfaces for users to learn                          │
+│                                                                │
+│  Glean-first (Option E) gives you:                             │
+│  ├─ Single interface for all knowledge                         │
+│  ├─ Enterprise search out of box                               │
+│  ├─ 90% less engineering overhead                              │
+│  └─ Engineers focus on agents, not UI                          │
+│                                                                │
+│  Glean-first costs you:                                        │
+│  ├─ Lock-in to Glean's UX decisions                           │
+│  ├─ Limited model choices                                      │
+│  └─ Less customization                                         │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
+```

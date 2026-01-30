@@ -8,7 +8,12 @@ interface RouteParams {
 }
 
 /**
- * GET /api/glean/agents/[agentId] - Get agent metadata (read-only)
+ * GET /api/glean/agents/[agentId]/schemas - Get agent input/output schemas
+ *
+ * Response:
+ * - agentId: The agent ID
+ * - inputSchema: JSON schema for agent inputs
+ * - outputSchema: JSON schema for agent outputs
  */
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
@@ -26,16 +31,16 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       )
     }
 
-    const agent = await gleanProvider.getAgent(agentId)
+    const schemas = await gleanProvider.getAgentSchemas(agentId)
 
-    return NextResponse.json({ agent })
+    return NextResponse.json(schemas)
   } catch (error) {
-    console.error('Glean agent API error:', error)
+    console.error('Glean agent schemas error:', error)
 
     return NextResponse.json(
       {
         code: 'INTERNAL_ERROR',
-        message: error instanceof Error ? error.message : 'Failed to get agent',
+        message: error instanceof Error ? error.message : 'Failed to get agent schemas',
       },
       { status: 500 }
     )

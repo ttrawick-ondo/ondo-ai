@@ -1,25 +1,55 @@
 'use client'
 
 import { useTheme } from 'next-themes'
-import { Moon, Sun, Monitor, User, Bell, Shield } from 'lucide-react'
+import { Moon, Sun, Monitor, User, Bell, Shield, Router, Brain } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { useCurrentUser, useUserPreferences, useUserActions } from '@/stores'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Slider } from '@/components/ui/slider'
+import { useCurrentUser, useUserPreferences, useUserActions, useRoutingPreferences, useRoutingActions } from '@/stores'
 import { cn } from '@/lib/utils'
 import {
   EditProfileDialog,
   ChangePasswordDialog,
   Enable2FADialog,
 } from '@/components/settings'
+import type { RequestIntent } from '@/lib/api/routing'
+import type { AIProvider } from '@/types'
+
+// Intent display names
+const INTENT_LABELS: Record<RequestIntent, string> = {
+  knowledge_query: 'Knowledge Queries',
+  code_task: 'Code Tasks',
+  data_analysis: 'Data Analysis',
+  action_request: 'Actions',
+  general_chat: 'General Chat',
+}
+
+// Provider display names
+const PROVIDER_LABELS: Record<AIProvider, string> = {
+  glean: 'Glean',
+  anthropic: 'Claude (Anthropic)',
+  openai: 'GPT (OpenAI)',
+  dust: 'Dust',
+  ondobot: 'OndoBot',
+}
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme()
   const user = useCurrentUser()
   const preferences = useUserPreferences()
   const { updatePreferences } = useUserActions()
+  const routingPrefs = useRoutingPreferences()
+  const routingActions = useRoutingActions()
 
   return (
     <div className="p-6 max-w-3xl mx-auto">
@@ -133,6 +163,120 @@ export default function SettingsPage() {
                 }
               />
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Intelligent Routing */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Router className="h-5 w-5" />
+              Intelligent Routing
+            </CardTitle>
+            <CardDescription>
+              Automatically route requests to the best AI provider based on intent
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Enable Auto-Routing</p>
+                <p className="text-sm text-muted-foreground">
+                  Automatically select the best provider for each request
+                </p>
+              </div>
+              <Switch
+                checked={routingPrefs.autoRouting}
+                onCheckedChange={routingActions.setAutoRouting}
+              />
+            </div>
+
+            {routingPrefs.autoRouting && (
+              <>
+                <Separator />
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">Show Routing Indicator</p>
+                    <p className="text-sm text-muted-foreground">
+                      Display which provider handled each request
+                    </p>
+                  </div>
+                  <Switch
+                    checked={routingPrefs.showRoutingIndicator}
+                    onCheckedChange={routingActions.setShowRoutingIndicator}
+                  />
+                </div>
+
+                <Separator />
+
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="font-medium">Confidence Threshold</p>
+                    <span className="text-sm text-muted-foreground">
+                      {Math.round(routingPrefs.confidenceThreshold * 100)}%
+                    </span>
+                  </div>
+                  <Slider
+                    value={[routingPrefs.confidenceThreshold * 100]}
+                    onValueChange={([value]) =>
+                      routingActions.setConfidenceThreshold(value / 100)
+                    }
+                    min={50}
+                    max={95}
+                    step={5}
+                    className="w-full"
+                  />
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Minimum confidence required for auto-routing. Lower values route more aggressively.
+                  </p>
+                </div>
+
+                <Separator />
+
+                <div>
+                  <p className="font-medium mb-3">Provider Preferences</p>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Choose which provider handles each type of request
+                  </p>
+                  <div className="space-y-3">
+                    {(Object.keys(INTENT_LABELS) as RequestIntent[]).map((intent) => (
+                      <div key={intent} className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Brain className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-sm">{INTENT_LABELS[intent]}</span>
+                        </div>
+                        <Select
+                          value={routingPrefs.providerPreferences[intent]}
+                          onValueChange={(value) =>
+                            routingActions.setProviderPreference(intent, value as AIProvider)
+                          }
+                        >
+                          <SelectTrigger className="w-48">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(Object.keys(PROVIDER_LABELS) as AIProvider[]).map((provider) => (
+                              <SelectItem key={provider} value={provider}>
+                                {PROVIDER_LABELS[provider]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="flex justify-end">
+                  <Button variant="outline" onClick={routingActions.resetToDefaults}>
+                    Reset to Defaults
+                  </Button>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
 

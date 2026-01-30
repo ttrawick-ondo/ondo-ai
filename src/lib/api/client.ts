@@ -9,6 +9,7 @@ import type {
   UpdateGleanAgentInput,
   GleanDataSource,
 } from '@/types'
+import type { GleanAgent, GleanCitation } from './glean/types'
 import { parseSSEResponse } from './streaming/encoder'
 import { withRetry, type RetryOptions } from './utils/retry'
 import { RateLimitError, APIError } from './errors/apiErrors'
@@ -306,6 +307,19 @@ export class ProvidersClient {
   }
 }
 
+/**
+ * GleanClient - Client for Glean API operations
+ *
+ * IMPORTANT: Glean does NOT support agent CRUD via API.
+ * Agents must be created/updated/deleted via the Glean Agent Builder UI.
+ * This client supports:
+ * - Listing/searching agents (read-only)
+ * - Getting agent metadata (read-only)
+ * - Executing agents (run)
+ * - Listing data sources (read-only)
+ *
+ * The legacy CRUD methods are kept for backwards compatibility but will throw errors.
+ */
 export class GleanClient {
   private baseUrl: string
 
@@ -313,23 +327,58 @@ export class GleanClient {
     this.baseUrl = baseUrl
   }
 
-  async listAgents(workspaceId: string): Promise<GleanAgentConfig[]> {
-    const response = await fetch(
-      `${this.baseUrl}/api/glean/agents?workspaceId=${encodeURIComponent(workspaceId)}`
-    )
+  /**
+   * Search/list agents from Glean
+   * Uses the real Glean Agents API (POST /rest/api/v1/agents/search)
+   */
+  async searchAgents(options?: {
+    query?: string
+    pageSize?: number
+    cursor?: string
+  }): Promise<{ agents: GleanAgent[]; cursor?: string; hasMoreResults: boolean }> {
+    const params = new URLSearchParams()
+    if (options?.query) params.set('query', options.query)
+    if (options?.pageSize) params.set('pageSize', options.pageSize.toString())
+    if (options?.cursor) params.set('cursor', options.cursor)
+
+    const response = await fetch(`${this.baseUrl}/api/glean/agents?${params}`)
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({
         message: response.statusText,
       }))
-      throw new Error(error.message || 'Failed to list agents')
+      throw new Error(error.message || 'Failed to search agents')
     }
 
-    const data = await response.json()
-    return data.agents
+    return response.json()
   }
 
-  async getAgent(agentId: string): Promise<GleanAgentConfig> {
+  /**
+   * @deprecated Use searchAgents() instead. This method is kept for backwards compatibility.
+   */
+  async listAgents(workspaceId: string): Promise<GleanAgentConfig[]> {
+    // Map to new API - workspaceId is no longer needed
+    const result = await this.searchAgents()
+
+    // Convert GleanAgent to GleanAgentConfig for backwards compatibility
+    return result.agents.map((agent) => ({
+      id: agent.id,
+      name: agent.name,
+      description: agent.description,
+      systemPrompt: '', // Not available from list API
+      dataSources: [], // Not available from list API
+      temperature: 0.7, // Default
+      workspaceId,
+      createdAt: new Date(agent.createdAt),
+      updatedAt: new Date(agent.updatedAt),
+    }))
+  }
+
+  /**
+   * Get agent metadata from Glean (read-only)
+   * Uses GET /rest/api/v1/agents/{agent_id}
+   */
+  async getAgentMetadata(agentId: string): Promise<GleanAgent> {
     const response = await fetch(`${this.baseUrl}/api/glean/agents/${agentId}`)
 
     if (!response.ok) {
@@ -343,6 +392,127 @@ export class GleanClient {
     return data.agent
   }
 
+  /**
+   * @deprecated Use getAgentMetadata() instead. This method is kept for backwards compatibility.
+   */
+  async getAgent(agentId: string): Promise<GleanAgentConfig> {
+    const agent = await this.getAgentMetadata(agentId)
+
+    // Convert to GleanAgentConfig for backwards compatibility
+    return {
+      id: agent.id,
+      name: agent.name,
+      description: agent.description,
+      systemPrompt: '', // Not available from API
+      dataSources: [], // Not available from API
+      temperature: 0.7, // Default
+      workspaceId: '',
+      createdAt: new Date(agent.createdAt),
+      updatedAt: new Date(agent.updatedAt),
+    }
+  }
+
+  /**
+   * Execute an agent
+   * Uses POST /api/glean/agents/{agentId}/run
+   */
+  async runAgent(
+    agentId: string,
+    message: string,
+    options?: { conversationId?: string }
+  ): Promise<{
+    content: string
+    citations: GleanCitation[]
+    conversationId?: string
+  }> {
+    const response = await fetch(
+      `${this.baseUrl}/api/glean/agents/${agentId}/run`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message,
+          conversationId: options?.conversationId,
+        }),
+      }
+    )
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({
+        message: response.statusText,
+      }))
+      throw new Error(error.message || 'Failed to run agent')
+    }
+
+    return response.json()
+  }
+
+  /**
+   * Execute an agent with streaming response
+   * Uses POST /api/glean/agents/{agentId}/run with stream=true
+   */
+  async *runAgentStream(
+    agentId: string,
+    message: string,
+    options?: { conversationId?: string }
+  ): AsyncGenerator<{ type: string; content?: string; citations?: GleanCitation[] }> {
+    const response = await fetch(
+      `${this.baseUrl}/api/glean/agents/${agentId}/run`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
+        },
+        body: JSON.stringify({
+          message,
+          conversationId: options?.conversationId,
+          stream: true,
+        }),
+      }
+    )
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({
+        message: response.statusText,
+      }))
+      throw new Error(error.message || 'Failed to stream agent run')
+    }
+
+    const reader = response.body?.getReader()
+    if (!reader) {
+      throw new Error('No response body')
+    }
+
+    const decoder = new TextDecoder()
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      const chunk = decoder.decode(value, { stream: true })
+      const lines = chunk.split('\n')
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6)
+          if (data === '[DONE]') continue
+
+          try {
+            yield JSON.parse(data)
+          } catch {
+            // Ignore parse errors
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * @deprecated Agent creation is NOT supported via Glean API.
+   * Use the Glean Agent Builder UI instead: https://app.glean.com/admin/platform/agents
+   * This method will throw an error when called.
+   */
   async createAgent(
     workspaceId: string,
     input: CreateGleanAgentInput
@@ -351,62 +521,70 @@ export class GleanClient {
       `${this.baseUrl}/api/glean/agents?workspaceId=${encodeURIComponent(workspaceId)}`,
       {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(input),
       }
     )
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({
-        message: response.statusText,
-      }))
-      throw new Error(error.message || 'Failed to create agent')
-    }
-
-    const data = await response.json()
-    return data.agent
+    const error = await response.json().catch(() => ({
+      message: response.statusText,
+    }))
+    throw new Error(
+      error.message ||
+        'Agent creation via API is not supported. Use Glean Agent Builder UI.'
+    )
   }
 
+  /**
+   * @deprecated Agent update is NOT supported via Glean API.
+   * Use the Glean Agent Builder UI instead: https://app.glean.com/admin/platform/agents
+   * This method will throw an error when called.
+   */
   async updateAgent(
     agentId: string,
     input: UpdateGleanAgentInput
   ): Promise<GleanAgentConfig> {
     const response = await fetch(`${this.baseUrl}/api/glean/agents/${agentId}`, {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
     })
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({
-        message: response.statusText,
-      }))
-      throw new Error(error.message || 'Failed to update agent')
-    }
-
-    const data = await response.json()
-    return data.agent
+    const error = await response.json().catch(() => ({
+      message: response.statusText,
+    }))
+    throw new Error(
+      error.message ||
+        'Agent update via API is not supported. Use Glean Agent Builder UI.'
+    )
   }
 
+  /**
+   * @deprecated Agent deletion is NOT supported via Glean API.
+   * Use the Glean Agent Builder UI instead: https://app.glean.com/admin/platform/agents
+   * This method will throw an error when called.
+   */
   async deleteAgent(agentId: string): Promise<void> {
     const response = await fetch(`${this.baseUrl}/api/glean/agents/${agentId}`, {
       method: 'DELETE',
     })
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({
-        message: response.statusText,
-      }))
-      throw new Error(error.message || 'Failed to delete agent')
-    }
+    const error = await response.json().catch(() => ({
+      message: response.statusText,
+    }))
+    throw new Error(
+      error.message ||
+        'Agent deletion via API is not supported. Use Glean Agent Builder UI.'
+    )
   }
 
+  /**
+   * List available data sources from Glean
+   */
   async listDataSources(): Promise<GleanDataSource[]> {
-    const response = await fetch(`${this.baseUrl}/api/glean/datasources`)
+    const response = await fetch(`${this.baseUrl}/api/glean/search`, {
+      method: 'GET',
+    })
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({
@@ -416,7 +594,34 @@ export class GleanClient {
     }
 
     const data = await response.json()
-    return data.dataSources
+    return data.dataSources || []
+  }
+
+  /**
+   * Search Glean knowledge base
+   */
+  async search(
+    query: string,
+    options?: { datasource?: string; maxResults?: number }
+  ): Promise<{ citations: GleanCitation[]; totalCount: number }> {
+    const response = await fetch(`${this.baseUrl}/api/glean/search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query,
+        datasource: options?.datasource,
+        maxResults: options?.maxResults,
+      }),
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({
+        message: response.statusText,
+      }))
+      throw new Error(error.message || 'Search failed')
+    }
+
+    return response.json()
   }
 }
 

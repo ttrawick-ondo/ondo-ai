@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { MessageSquare, FolderKanban, Library, Settings } from 'lucide-react'
+import { MessageSquare, FolderKanban, Library, Settings, Bot } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 
@@ -21,6 +21,11 @@ const navItems = [
     label: 'Prompts',
     href: '/prompts',
     icon: Library,
+  },
+  {
+    label: 'Agents',
+    href: '/agents',
+    icon: Bot,
   },
   {
     label: 'Settings',

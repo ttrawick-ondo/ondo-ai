@@ -4,11 +4,13 @@
  * Provides a single Prisma client instance across the application.
  * In development, the client is cached on globalThis to survive HMR.
  *
- * Uses Prisma 7 with libSQL adapter for SQLite.
+ * Uses Prisma with libSQL adapter for both local SQLite files
+ * and remote Turso databases.
  */
 
 import { PrismaClient } from '@/generated/prisma'
 import { PrismaLibSql } from '@prisma/adapter-libsql'
+import path from 'path'
 
 // Extend globalThis to cache the Prisma client in development
 declare global {
@@ -21,14 +23,23 @@ declare global {
  */
 function createPrismaClient(): PrismaClient {
   // Get database URL from environment
-  const databaseUrl = process.env.DATABASE_URL || 'file:./dev.db'
+  let databaseUrl = process.env.DATABASE_URL || 'file:./dev.db'
 
-  // Create Prisma adapter factory
+  // For local SQLite files, convert relative path to absolute for libSQL
+  if (databaseUrl.startsWith('file:')) {
+    const filePath = databaseUrl.replace('file:', '')
+    const absolutePath = path.isAbsolute(filePath)
+      ? filePath
+      : path.join(process.cwd(), filePath)
+    databaseUrl = `file:${absolutePath}`
+  }
+
+  // Create libSQL adapter
   const adapter = new PrismaLibSql({
     url: databaseUrl,
+    authToken: process.env.DATABASE_AUTH_TOKEN,
   })
 
-  // Create Prisma client with adapter
   return new PrismaClient({
     adapter,
     log: process.env.NODE_ENV === 'development'
