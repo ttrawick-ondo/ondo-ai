@@ -47,11 +47,15 @@ npm run agent qa --pre-commit                # Pre-commit validation
 ```
 src/
 ├── app/                 # Next.js App Router (pages, API routes)
+│   └── api/
+│       ├── chat/        # Main chat endpoint with routing
+│       └── actions/     # External system action endpoints
 ├── components/          # React components by feature (chat/, projects/, prompts/, ui/)
-├── stores/              # Zustand stores (chatStore, projectStore, modelStore, etc.)
+├── stores/              # Zustand stores (chatStore, projectStore, routingStore, etc.)
 ├── lib/
 │   ├── api/
 │   │   ├── providers/   # AI provider implementations (openai.ts, anthropic.ts, glean.ts)
+│   │   ├── routing/     # Intent classification & request routing
 │   │   ├── config/      # Model configs, capabilities, pricing
 │   │   ├── streaming/   # SSE encoder/decoder
 │   │   └── client.ts    # Frontend API clients
@@ -63,10 +67,44 @@ packages/
 
 ### Data Flow Pattern
 ```
-Component → Store Action → API Client → /api/chat → Provider → AI Response
-                                                          ↓
-Component ← Store Update ← Stream Callbacks ← SSE Stream ←┘
+Component → Store Action → API Client → /api/chat → Router → Provider → AI Response
+                                                       ↓            ↓
+Component ← Store Update ← Stream Callbacks ← SSE Stream ←──────────┘
 ```
+
+### Intelligent Routing System
+The app includes an intent-based routing system that can automatically select the optimal provider for each request.
+
+**Request Intents:**
+- `knowledge_query` → Glean (search + RAG)
+- `code_task` → Claude (Anthropic)
+- `data_analysis` → GPT-4 (OpenAI)
+- `action_request` → Action endpoints
+- `general_chat` → Default provider
+
+**Key Files:**
+```
+src/lib/api/routing/
+├── classifier.ts       # Rule-based intent classification
+├── index.ts            # Main routing entry point (getRouteForRequest)
+└── knowledge-router.ts # Glean RAG handler
+src/stores/routingStore.ts  # User preferences (persisted)
+src/components/chat/RoutingIndicator.tsx  # UI indicator
+```
+
+**Usage:**
+```typescript
+import { getRouteForRequest } from '@/lib/api/routing'
+
+const route = await getRouteForRequest(chatRequest, {
+  autoRouting: true,
+  confidenceThreshold: 0.7,
+  providerPreferences: { knowledge_query: 'glean', code_task: 'anthropic' },
+})
+// route: { model, provider, intent, confidence, wasAutoRouted }
+```
+
+Routing info flows through response headers (`X-Intent`, `X-Routed-By`, `X-Intent-Confidence`) and is displayed via `RoutingIndicator` component when enabled in settings.
 
 ### Provider Pattern
 All AI providers extend `BaseProvider` with:
@@ -159,6 +197,11 @@ GLEAN_API_URL=https://api.glean.com/v1
 ENABLE_OPENAI=true
 ENABLE_ANTHROPIC=true
 ENABLE_GLEAN=false
+
+# Routing configuration
+ROUTING_MODE=rule_based              # or 'llm_hybrid' (future)
+ROUTING_CONFIDENCE_THRESHOLD=0.7     # Min confidence for auto-routing
+ENABLE_AUTO_ROUTING=false            # Opt-in for auto-routing
 ```
 
 ## Key Patterns
@@ -184,4 +227,18 @@ const useMyStore = create((set, get) => ({
     addItem: (item) => set((state) => ({ items: [...state.items, item] })),
   },
 }))
+```
+
+### Action Endpoints
+External system actions are dispatched through `/api/actions/`:
+```
+src/app/api/actions/
+├── route.ts           # Main dispatcher (validates auth, routes to handlers)
+└── ondobot/route.ts   # OndoBot-specific actions
+```
+
+The `execute_action` tool (`src/lib/tools/builtin/execute-action.ts`) allows AI to trigger actions:
+```typescript
+// Available systems: ondobot, hubspot (future), jira (future), slack (future)
+// OndoBot actions: chat, run_automation, query_data, get_status, list_automations
 ```

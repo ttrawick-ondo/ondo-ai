@@ -8,7 +8,9 @@ import type {
   CreateGleanAgentInput,
   UpdateGleanAgentInput,
   GleanDataSource,
+  AIProvider,
 } from '@/types'
+import type { RequestIntent } from './routing'
 import type { GleanAgent, GleanCitation } from './glean/types'
 import { parseSSEResponse } from './streaming/encoder'
 import { withRetry, type RetryOptions } from './utils/retry'
@@ -71,20 +73,64 @@ class APIClient {
   }
 }
 
+/** Routing options to pass to chat requests */
+export interface RoutingOptions {
+  autoRouting?: boolean
+  confidenceThreshold?: number
+  providerPreferences?: Partial<Record<RequestIntent, AIProvider>>
+  modelOverrides?: Partial<Record<RequestIntent, string>>
+}
+
+/** Routing info returned from responses */
+export interface RoutingInfo {
+  intent?: RequestIntent
+  confidence?: number
+  wasAutoRouted: boolean
+  routedBy?: string
+}
+
 export class ChatClient {
   private baseUrl: string
   private retryOptions: RetryOptions
+  private routingOptions: RoutingOptions
 
-  constructor(baseUrl: string = '', retryOptions: RetryOptions = DEFAULT_RETRY_OPTIONS) {
+  constructor(
+    baseUrl: string = '',
+    retryOptions: RetryOptions = DEFAULT_RETRY_OPTIONS,
+    routingOptions: RoutingOptions = {}
+  ) {
     this.baseUrl = baseUrl
     this.retryOptions = retryOptions
+    this.routingOptions = routingOptions
+  }
+
+  /** Update routing options */
+  setRoutingOptions(options: RoutingOptions): void {
+    this.routingOptions = options
+  }
+
+  /** Extract routing info from response headers */
+  private extractRoutingInfo(response: Response): RoutingInfo {
+    const routedBy = response.headers.get('X-Routed-By')
+    const intent = response.headers.get('X-Intent') as RequestIntent | null
+    const confidence = response.headers.get('X-Intent-Confidence')
+
+    return {
+      intent: intent || undefined,
+      confidence: confidence ? parseFloat(confidence) : undefined,
+      wasAutoRouted: routedBy !== 'explicit',
+      routedBy: routedBy || undefined,
+    }
   }
 
   async complete(
     request: Omit<ChatCompletionRequest, 'options'> & {
       options?: ChatCompletionRequest['options'] & { stream?: false }
-    }
-  ): Promise<ChatCompletionResponse> {
+    },
+    routingOptions?: RoutingOptions
+  ): Promise<ChatCompletionResponse & { routing?: RoutingInfo }> {
+    const mergedRoutingOptions = { ...this.routingOptions, ...routingOptions }
+
     return withRetry(async () => {
       const response = await fetch(`${this.baseUrl}/api/chat`, {
         method: 'POST',
@@ -96,6 +142,9 @@ export class ChatClient {
           options: {
             ...request.options,
             stream: false,
+            autoRouting: mergedRoutingOptions.autoRouting,
+            providerPreferences: mergedRoutingOptions.providerPreferences,
+            modelOverrides: mergedRoutingOptions.modelOverrides,
           },
         }),
       })
@@ -120,7 +169,10 @@ export class ChatClient {
         )
       }
 
-      return response.json()
+      const data = await response.json()
+      const routing = this.extractRoutingInfo(response)
+
+      return { ...data, routing }
     }, this.retryOptions)
   }
 
@@ -128,13 +180,16 @@ export class ChatClient {
     request: Omit<ChatCompletionRequest, 'options'> & {
       options?: Omit<ChatCompletionRequest['options'], 'stream'>
     },
-    callbacks: StreamCallbacks,
-    options: StreamOptions = {}
+    callbacks: StreamCallbacks & { onRoutingInfo?: (info: RoutingInfo) => void },
+    options: StreamOptions = {},
+    routingOptions?: RoutingOptions
   ): Promise<void> {
     const {
       timeout = 120000, // 2 minutes default
       chunkTimeout = 30000, // 30 seconds between chunks
     } = options
+
+    const mergedRoutingOptions = { ...this.routingOptions, ...routingOptions }
 
     // Create abort controller for timeout
     const controller = new AbortController()
@@ -171,10 +226,19 @@ export class ChatClient {
           options: {
             ...request.options,
             stream: true,
+            autoRouting: mergedRoutingOptions.autoRouting,
+            providerPreferences: mergedRoutingOptions.providerPreferences,
+            modelOverrides: mergedRoutingOptions.modelOverrides,
           },
         }),
         signal: controller.signal,
       })
+
+      // Extract and report routing info from headers
+      if (callbacks.onRoutingInfo) {
+        const routingInfo = this.extractRoutingInfo(response)
+        callbacks.onRoutingInfo(routingInfo)
+      }
 
       if (!response.ok) {
         clearTimeouts()

@@ -11,10 +11,12 @@ import { ToolCallDisplay, ToolResultDisplay } from './ToolCallDisplay'
 import { ContentWithCitations } from './CitedContent'
 import { FilePreviewList } from './FilePreview'
 import { ReadAloudButton } from './AudioPlayer'
+import { RoutingIndicator } from './RoutingIndicator'
 import { ModelBadge } from '@/components/model'
 import type { Message, AIProvider, ImageAttachment, FileAttachment } from '@/types'
+import type { RequestIntent } from '@/lib/api/routing'
 import { isFileAttachment } from '@/types'
-import { useCurrentUser, useModels, useIsExecutingTools } from '@/stores'
+import { useCurrentUser, useModels, useIsExecutingTools, useShowRoutingIndicator } from '@/stores'
 
 interface MessageBubbleProps {
   message: Message
@@ -26,6 +28,7 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
   const user = useCurrentUser()
   const models = useModels()
   const isExecutingTools = useIsExecutingTools()
+  const showRoutingIndicator = useShowRoutingIndicator()
   const isUser = message.role === 'user'
   const isTool = message.role === 'tool'
   const hasToolCalls = message.tool_calls && message.tool_calls.length > 0
@@ -36,6 +39,9 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
   const modelId = message.metadata?.model
   const model = modelId ? models.find((m) => m.id === modelId) : null
 
+  // Get routing info from metadata
+  const routingInfo = message.metadata?.routing
+
   // Determine provider from model ID if model config not found
   const getProviderFromModelId = (id: string): AIProvider => {
     if (id.startsWith('gpt-')) return 'openai'
@@ -45,6 +51,8 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
     if (id.startsWith('ondobot-')) return 'ondobot'
     return 'anthropic'
   }
+
+  const provider = model?.provider || (modelId ? getProviderFromModelId(modelId) : 'anthropic')
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(message.content || '')
@@ -155,13 +163,24 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
           )}
         </div>
 
-        {/* Model Badge for assistant messages */}
+        {/* Model/Routing Badge for assistant messages */}
         {!isUser && modelId && (
-          <ModelBadge
-            modelId={modelId}
-            modelName={model?.name || modelId}
-            provider={model?.provider || getProviderFromModelId(modelId)}
-          />
+          <div className="flex items-center gap-2">
+            <ModelBadge
+              modelId={modelId}
+              modelName={model?.name || modelId}
+              provider={provider}
+            />
+            {showRoutingIndicator && routingInfo?.wasAutoRouted && (
+              <RoutingIndicator
+                provider={provider}
+                intent={routingInfo.intent as RequestIntent | undefined}
+                wasAutoRouted={routingInfo.wasAutoRouted}
+                confidence={routingInfo.confidence}
+                size="sm"
+              />
+            )}
+          </div>
         )}
 
         {/* Actions */}

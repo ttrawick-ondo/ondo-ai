@@ -65,6 +65,13 @@ export interface MessageMetadata {
   tokenCount?: number
   processingTimeMs?: number
   promptId?: string
+  // Routing metadata
+  routing?: {
+    intent?: string
+    confidence?: number
+    wasAutoRouted?: boolean
+    routedBy?: string
+  }
 }
 
 export interface Message {

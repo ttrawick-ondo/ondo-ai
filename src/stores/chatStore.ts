@@ -4,8 +4,9 @@ import { devtools } from 'zustand/middleware'
 import type { Conversation, Message, SendMessageInput, AIProvider, ToolCall, ToolExecutionRecord } from '@/types'
 import { mockConversations, mockMessages } from '@/lib/mocks/data'
 import { generateId } from '@/lib/utils'
-import { chatClient } from '@/lib/api/client'
+import { chatClient, type RoutingInfo } from '@/lib/api/client'
 import { toolRegistry, registerBuiltinTools } from '@/lib/tools'
+import { useRoutingStore } from './routingStore'
 
 // Register built-in tools on module load
 registerBuiltinTools()
@@ -202,11 +203,16 @@ export const useChatStore = create<ChatStore>()(
           const toolsToUse = input.tools || enabledTools
           const toolsConfig = toolsToUse.length > 0 ? toolRegistry.toAPIFormat(toolsToUse) : undefined
 
+          // Get routing options from the routing store
+          const routingState = useRoutingStore.getState()
+          const routingOptions = routingState.actions.getRoutingOptions()
+
           // Recursive function to handle tool calls
           const processResponse = async () => {
             const aiMessageId = `msg-${generateId()}`
             let fullResponse = ''
             let receivedToolCalls: ToolCall[] = []
+            let routingInfo: RoutingInfo | undefined
 
             try {
               await chatClient.stream(
@@ -228,6 +234,16 @@ export const useChatStore = create<ChatStore>()(
                     fullResponse += delta
                     set({ streamingMessage: fullResponse })
                   },
+                  onRoutingInfo: (info) => {
+                    routingInfo = info
+                    // Update the routing store with the last routing info
+                    useRoutingStore.getState().actions.setLastRouteInfo({
+                      intent: info.intent,
+                      confidence: info.confidence,
+                      provider: provider,
+                      wasAutoRouted: info.wasAutoRouted,
+                    })
+                  },
                   onDone: async (response) => {
                     // Check if response contains tool calls
                     if (response.message.tool_calls && response.message.tool_calls.length > 0) {
@@ -244,6 +260,12 @@ export const useChatStore = create<ChatStore>()(
                           model: response.metadata.model,
                           tokenCount: response.usage.totalTokens,
                           processingTimeMs: response.metadata.processingTimeMs,
+                          routing: routingInfo ? {
+                            intent: routingInfo.intent,
+                            confidence: routingInfo.confidence,
+                            wasAutoRouted: routingInfo.wasAutoRouted,
+                            routedBy: routingInfo.routedBy,
+                          } : undefined,
                         },
                         createdAt: new Date(),
                       }
@@ -317,6 +339,12 @@ export const useChatStore = create<ChatStore>()(
                           model: response.metadata.model,
                           tokenCount: response.usage.totalTokens,
                           processingTimeMs: response.metadata.processingTimeMs,
+                          routing: routingInfo ? {
+                            intent: routingInfo.intent,
+                            confidence: routingInfo.confidence,
+                            wasAutoRouted: routingInfo.wasAutoRouted,
+                            routedBy: routingInfo.routedBy,
+                          } : undefined,
                         },
                         createdAt: new Date(),
                       }
@@ -367,7 +395,9 @@ export const useChatStore = create<ChatStore>()(
                       streamingMessage: '',
                     }))
                   },
-                }
+                },
+                {}, // StreamOptions (use defaults)
+                routingOptions
               )
             } catch (error) {
               console.error('Chat error:', error)

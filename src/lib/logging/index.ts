@@ -21,14 +21,30 @@ function getLogLevel(): LogLevel {
   return process.env.NODE_ENV === 'production' ? 'info' : 'debug'
 }
 
-// Determine if we should use pretty printing (development only)
+// Check if we're in a browser environment
+const isBrowser = typeof window !== 'undefined'
+
+// Check if we're running in Next.js (server-side rendering or API routes)
+// pino-pretty uses worker threads which causes issues with Next.js webpack bundling
+// NEXT_RUNTIME is set by Next.js in both 'nodejs' and 'edge' runtimes
+const isNextJs = typeof process !== 'undefined' &&
+  (process.env.NEXT_RUNTIME === 'nodejs' || process.env.NEXT_RUNTIME === 'edge' || !!process.env.__NEXT_PROCESSED_ENV)
+
+// Determine if we should use pretty printing
+// Only use in development, not in browser, and not when bundled by Next.js
+// This avoids worker thread issues with Next.js webpack bundling
 function shouldUsePrettyPrint(): boolean {
+  if (isBrowser || isNextJs) {
+    return false
+  }
   return process.env.NODE_ENV !== 'production' && process.env.LOG_PRETTY !== 'false'
 }
 
 // Create the base pino logger
 const baseLogger = pino({
   level: getLogLevel(),
+  // Only use transport in non-webpack environments (like standalone Node.js scripts)
+  // In Next.js, we use plain JSON logging to avoid worker thread issues
   transport: shouldUsePrettyPrint()
     ? {
         target: 'pino-pretty',
@@ -39,6 +55,8 @@ const baseLogger = pino({
         },
       }
     : undefined,
+  // Use browser-friendly config when in browser
+  browser: isBrowser ? { asObject: true } : undefined,
   // Custom serializers for sensitive data
   serializers: {
     req: (req) => ({
