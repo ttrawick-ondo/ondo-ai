@@ -20,6 +20,7 @@ export function registerRefactorCommand(program) {
         .option('-i, --interactive', 'Interactive mode for plan review', true)
         .option('-v, --verbose', 'Verbose output', false)
         .option('--dry-run', 'Show what would be done without making changes', false)
+        .option('--commit', 'Commit changes after successful refactoring', false)
         .action(async (options) => {
         const spinner = createSpinner('Initializing Refactor Agent...');
         try {
@@ -99,6 +100,7 @@ export function registerRefactorCommand(program) {
                     refactorType,
                     verbose: options.verbose,
                     dryRun: options.dryRun,
+                    enableCommit: options.commit,
                 },
             });
             if (options.dryRun) {

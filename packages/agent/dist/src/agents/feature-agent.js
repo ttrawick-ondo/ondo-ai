@@ -11,7 +11,7 @@ export class FeatureAgent extends AbstractAgent {
             canExecuteCommands: true,
             canModifyTests: true,
             canModifySource: true,
-            canCommit: false,
+            canCommit: true,
         },
     };
     async execute(context) {

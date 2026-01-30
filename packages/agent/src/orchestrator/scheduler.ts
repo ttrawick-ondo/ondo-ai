@@ -27,6 +27,8 @@ const DEFAULT_OPTIONS: ScheduleOptions = {
     test: 80,
     feature: 50,
     refactor: 30,
+    docs: 20,
+    security: 90,
   },
   cooldownMs: 1000,
 }

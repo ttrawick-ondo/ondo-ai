@@ -3,8 +3,12 @@ import type { ChatCompletionRequest } from '@/types'
 import { getProviderForModel } from '@/lib/api/providers'
 import { createSSEStream } from '@/lib/api/streaming/encoder'
 import { APIError, ValidationError } from '@/lib/api/errors/apiErrors'
+import { chatLogger, logChatCompletion } from '@/lib/logging'
 
 export async function POST(request: NextRequest) {
+  const requestId = crypto.randomUUID()
+  const startTime = Date.now()
+
   try {
     const body = await request.json()
 
@@ -37,6 +41,16 @@ export async function POST(request: NextRequest) {
 
     const provider = getProviderForModel(chatRequest.model)
 
+    chatLogger.info('Chat request received', {
+      requestId,
+      conversationId: chatRequest.conversationId,
+      model: chatRequest.model,
+      provider: chatRequest.provider || provider.provider,
+      messageCount: chatRequest.messages.length,
+      streaming: chatRequest.options?.stream !== false,
+      hasTools: !!(chatRequest.options?.tools?.length),
+    })
+
     // Check if streaming is requested
     if (chatRequest.options?.stream !== false) {
       const stream = createSSEStream(provider.stream(chatRequest))
@@ -46,6 +60,7 @@ export async function POST(request: NextRequest) {
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache',
           Connection: 'keep-alive',
+          'X-Request-Id': requestId,
         },
       })
     }
@@ -53,13 +68,30 @@ export async function POST(request: NextRequest) {
     // Non-streaming response
     const response = await provider.complete(chatRequest)
 
+    logChatCompletion(chatRequest.conversationId, {
+      provider: chatRequest.provider || provider.provider,
+      model: chatRequest.model,
+      inputTokens: response.usage?.inputTokens,
+      outputTokens: response.usage?.outputTokens,
+      duration: Date.now() - startTime,
+      toolCalls: response.message.tool_calls?.length,
+      success: true,
+    })
+
     return NextResponse.json(response)
   } catch (error) {
+    const duration = Date.now() - startTime
+
+    chatLogger.error('Chat request failed', {
+      requestId,
+      duration,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      errorCode: error instanceof APIError ? error.code : 'INTERNAL_ERROR',
+    })
+
     if (error instanceof APIError) {
       return NextResponse.json(error.toJSON(), { status: error.statusCode })
     }
-
-    console.error('Chat API error:', error)
 
     return NextResponse.json(
       {

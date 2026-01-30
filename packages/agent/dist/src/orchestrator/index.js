@@ -5,6 +5,8 @@ import { TestAgent } from '../agents/test-agent.js';
 import { QAAgent } from '../agents/qa-agent.js';
 import { FeatureAgent } from '../agents/feature-agent.js';
 import { RefactorAgent } from '../agents/refactor-agent.js';
+import { DocsAgent } from '../agents/docs-agent.js';
+import { SecurityAgent } from '../agents/security-agent.js';
 import { createToolRegistry, registerAllTools } from '../tools/index.js';
 export class Orchestrator {
     config;
@@ -28,6 +30,8 @@ export class Orchestrator {
             qa: 'full',
             feature: 'supervised',
             refactor: 'supervised',
+            docs: 'supervised',
+            security: 'supervised',
         };
         const taskTypes = { ...defaultAutonomy, ...this.config.autonomy.taskTypes };
         this.taskQueue = new TaskQueue(taskTypes);
@@ -44,8 +48,10 @@ export class Orchestrator {
         const qaAgent = new QAAgent(this.apiKey);
         const featureAgent = new FeatureAgent(this.apiKey);
         const refactorAgent = new RefactorAgent(this.apiKey);
+        const docsAgent = new DocsAgent(this.apiKey);
+        const securityAgent = new SecurityAgent(this.apiKey);
         // Set up event handlers for each agent
-        const agents = [testAgent, qaAgent, featureAgent, refactorAgent];
+        const agents = [testAgent, qaAgent, featureAgent, refactorAgent, docsAgent, securityAgent];
         for (const agent of agents) {
             agent.onEvent((event) => this.handleAgentEvent(event));
             this.agents.set(agent.metadata.role, agent);
@@ -184,8 +190,20 @@ export class Orchestrator {
         return this.config;
     }
     createContext(task) {
+        const agent = this.agents.get(task.type);
         const toolsMap = new Map();
+        // Filter tools based on agent capabilities
         for (const tool of this.toolRegistry.getAll()) {
+            // Check if agent can use git commit tools
+            if (tool.category === 'git' && tool.name === 'gitCommit') {
+                // Only include gitCommit if agent has canCommit capability
+                // AND if commit is enabled for this task
+                if (agent?.metadata.capabilities.canCommit && task.options?.enableCommit) {
+                    toolsMap.set(tool.name, tool);
+                }
+                continue;
+            }
+            // Include all other tools
             toolsMap.set(tool.name, tool);
         }
         return {

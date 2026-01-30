@@ -13,6 +13,7 @@ export interface FeatureCommandOptions {
   autoApprove?: boolean
   verbose?: boolean
   dryRun?: boolean
+  commit?: boolean
 }
 
 export function registerFeatureCommand(program: Command): void {
@@ -25,6 +26,7 @@ export function registerFeatureCommand(program: Command): void {
     .option('-a, --auto-approve', 'Auto-approve all actions without prompting', false)
     .option('-v, --verbose', 'Verbose output', false)
     .option('--dry-run', 'Show what would be done without making changes', false)
+    .option('--commit', 'Commit changes after successful implementation', false)
     .action(async (options: FeatureCommandOptions) => {
       const spinner = createSpinner('Initializing Feature Agent...')
 
@@ -135,6 +137,7 @@ export function registerFeatureCommand(program: Command): void {
             featureSpec,
             verbose: options.verbose,
             dryRun: options.dryRun,
+            enableCommit: options.commit,
           },
         })
 

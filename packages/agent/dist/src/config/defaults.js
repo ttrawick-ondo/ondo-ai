@@ -12,6 +12,8 @@ export const DEFAULT_AUTONOMY_LEVELS = {
     qa: 'full',
     feature: 'supervised',
     refactor: 'supervised',
+    docs: 'supervised',
+    security: 'supervised',
 };
 export const DEFAULT_TEST_PATTERNS = [
     '**/*.test.ts',

@@ -16,6 +16,8 @@ export const DEFAULT_AUTONOMY_LEVELS: Record<AgentRole, AutonomyLevel> = {
   qa: 'full',
   feature: 'supervised',
   refactor: 'supervised',
+  docs: 'supervised',
+  security: 'supervised',
 }
 
 export const DEFAULT_TEST_PATTERNS = [

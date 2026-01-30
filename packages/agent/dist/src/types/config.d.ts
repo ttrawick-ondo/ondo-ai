@@ -1,5 +1,5 @@
 import { z } from 'zod';
-export declare const AgentRoleSchema: z.ZodEnum<["test", "qa", "feature", "refactor"]>;
+export declare const AgentRoleSchema: z.ZodEnum<["test", "qa", "feature", "refactor", "docs", "security"]>;
 export type AgentRole = z.infer<typeof AgentRoleSchema>;
 export declare const AutonomyLevelSchema: z.ZodEnum<["full", "supervised", "manual"]>;
 export type AutonomyLevel = z.infer<typeof AutonomyLevelSchema>;
@@ -63,15 +63,15 @@ export declare const TestingConfigSchema: z.ZodObject<{
 }>;
 export type TestingConfig = z.infer<typeof TestingConfigSchema>;
 export declare const AutonomyConfigSchema: z.ZodObject<{
-    taskTypes: z.ZodDefault<z.ZodRecord<z.ZodEnum<["test", "qa", "feature", "refactor"]>, z.ZodEnum<["full", "supervised", "manual"]>>>;
+    taskTypes: z.ZodDefault<z.ZodRecord<z.ZodEnum<["test", "qa", "feature", "refactor", "docs", "security"]>, z.ZodEnum<["full", "supervised", "manual"]>>>;
     maxAutoApprovals: z.ZodDefault<z.ZodNumber>;
     requireApprovalForDestructive: z.ZodDefault<z.ZodBoolean>;
 }, "strip", z.ZodTypeAny, {
-    taskTypes: Partial<Record<"test" | "qa" | "feature" | "refactor", "full" | "supervised" | "manual">>;
+    taskTypes: Partial<Record<"test" | "qa" | "feature" | "refactor" | "docs" | "security", "full" | "supervised" | "manual">>;
     maxAutoApprovals: number;
     requireApprovalForDestructive: boolean;
 }, {
-    taskTypes?: Partial<Record<"test" | "qa" | "feature" | "refactor", "full" | "supervised" | "manual">> | undefined;
+    taskTypes?: Partial<Record<"test" | "qa" | "feature" | "refactor" | "docs" | "security", "full" | "supervised" | "manual">> | undefined;
     maxAutoApprovals?: number | undefined;
     requireApprovalForDestructive?: boolean | undefined;
 }>;
@@ -156,15 +156,15 @@ export declare const AgentConfigSchema: z.ZodObject<{
         thinkingBudget?: number | undefined;
     }>>;
     autonomy: z.ZodDefault<z.ZodObject<{
-        taskTypes: z.ZodDefault<z.ZodRecord<z.ZodEnum<["test", "qa", "feature", "refactor"]>, z.ZodEnum<["full", "supervised", "manual"]>>>;
+        taskTypes: z.ZodDefault<z.ZodRecord<z.ZodEnum<["test", "qa", "feature", "refactor", "docs", "security"]>, z.ZodEnum<["full", "supervised", "manual"]>>>;
         maxAutoApprovals: z.ZodDefault<z.ZodNumber>;
         requireApprovalForDestructive: z.ZodDefault<z.ZodBoolean>;
     }, "strip", z.ZodTypeAny, {
-        taskTypes: Partial<Record<"test" | "qa" | "feature" | "refactor", "full" | "supervised" | "manual">>;
+        taskTypes: Partial<Record<"test" | "qa" | "feature" | "refactor" | "docs" | "security", "full" | "supervised" | "manual">>;
         maxAutoApprovals: number;
         requireApprovalForDestructive: boolean;
     }, {
-        taskTypes?: Partial<Record<"test" | "qa" | "feature" | "refactor", "full" | "supervised" | "manual">> | undefined;
+        taskTypes?: Partial<Record<"test" | "qa" | "feature" | "refactor" | "docs" | "security", "full" | "supervised" | "manual">> | undefined;
         maxAutoApprovals?: number | undefined;
         requireApprovalForDestructive?: boolean | undefined;
     }>>;
@@ -225,7 +225,7 @@ export declare const AgentConfigSchema: z.ZodObject<{
         thinkingBudget?: number | undefined;
     };
     autonomy: {
-        taskTypes: Partial<Record<"test" | "qa" | "feature" | "refactor", "full" | "supervised" | "manual">>;
+        taskTypes: Partial<Record<"test" | "qa" | "feature" | "refactor" | "docs" | "security", "full" | "supervised" | "manual">>;
         maxAutoApprovals: number;
         requireApprovalForDestructive: boolean;
     };
@@ -256,7 +256,7 @@ export declare const AgentConfigSchema: z.ZodObject<{
         thinkingBudget?: number | undefined;
     } | undefined;
     autonomy?: {
-        taskTypes?: Partial<Record<"test" | "qa" | "feature" | "refactor", "full" | "supervised" | "manual">> | undefined;
+        taskTypes?: Partial<Record<"test" | "qa" | "feature" | "refactor" | "docs" | "security", "full" | "supervised" | "manual">> | undefined;
         maxAutoApprovals?: number | undefined;
         requireApprovalForDestructive?: boolean | undefined;
     } | undefined;

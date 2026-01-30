@@ -1,5 +1,5 @@
 import { z } from 'zod';
-export const AgentRoleSchema = z.enum(['test', 'qa', 'feature', 'refactor']);
+export const AgentRoleSchema = z.enum(['test', 'qa', 'feature', 'refactor', 'docs', 'security']);
 export const AutonomyLevelSchema = z.enum(['full', 'supervised', 'manual']);
 export const CoverageThresholdSchema = z.object({
     lines: z.number().min(0).max(100).default(80),
@@ -19,6 +19,8 @@ export const AutonomyConfigSchema = z.object({
         qa: 'full',
         feature: 'supervised',
         refactor: 'supervised',
+        docs: 'supervised',
+        security: 'supervised',
     }),
     maxAutoApprovals: z.number().min(1).default(10),
     requireApprovalForDestructive: z.boolean().default(true),
@@ -61,6 +63,8 @@ export const DEFAULT_CONFIG = {
             qa: 'full',
             feature: 'supervised',
             refactor: 'supervised',
+            docs: 'supervised',
+            security: 'supervised',
         },
         maxAutoApprovals: 10,
         requireApprovalForDestructive: true,

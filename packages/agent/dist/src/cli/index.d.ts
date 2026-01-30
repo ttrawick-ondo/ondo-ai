@@ -5,4 +5,6 @@ export { registerTestCommand } from './commands/test.js';
 export { registerFeatureCommand } from './commands/feature.js';
 export { registerRefactorCommand } from './commands/refactor.js';
 export { registerQACommand } from './commands/qa.js';
+export { registerDocsCommand } from './commands/docs.js';
+export { registerSecurityCommand } from './commands/security.js';
 //# sourceMappingURL=index.d.ts.map

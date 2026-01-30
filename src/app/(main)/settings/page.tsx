@@ -9,6 +9,11 @@ import { Separator } from '@/components/ui/separator'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { useCurrentUser, useUserPreferences, useUserActions } from '@/stores'
 import { cn } from '@/lib/utils'
+import {
+  EditProfileDialog,
+  ChangePasswordDialog,
+  Enable2FADialog,
+} from '@/components/settings'
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme()
@@ -45,9 +50,13 @@ export default function SettingsPage() {
                 <p className="font-medium">{user?.name}</p>
                 <p className="text-sm text-muted-foreground">{user?.email}</p>
               </div>
-              <Button variant="outline" className="ml-auto">
-                Edit Profile
-              </Button>
+              <EditProfileDialog
+                trigger={
+                  <Button variant="outline" className="ml-auto">
+                    Edit Profile
+                  </Button>
+                }
+              />
             </div>
           </CardContent>
         </Card>
@@ -144,7 +153,9 @@ export default function SettingsPage() {
                   Update your account password
                 </p>
               </div>
-              <Button variant="outline">Change</Button>
+              <ChangePasswordDialog
+                trigger={<Button variant="outline">Change</Button>}
+              />
             </div>
             <Separator />
             <div className="flex items-center justify-between">
@@ -154,7 +165,9 @@ export default function SettingsPage() {
                   Add an extra layer of security
                 </p>
               </div>
-              <Button variant="outline">Enable</Button>
+              <Enable2FADialog
+                trigger={<Button variant="outline">Enable</Button>}
+              />
             </div>
           </CardContent>
         </Card>

@@ -49,6 +49,20 @@ export interface TaskOptions {
   testFilter?: string
   featureSpec?: string
   refactorType?: RefactorType
+
+  // Documentation options
+  docType?: 'readme' | 'api' | 'changelog' | 'architecture' | 'all'
+  outputPath?: string
+  includeExamples?: boolean
+  format?: string
+
+  // Security scan options
+  scanType?: 'full' | 'dependencies' | 'secrets' | 'sast'
+  reportPath?: string
+  severityThreshold?: string
+
+  // Git commit integration
+  enableCommit?: boolean
 }
 
 export type RefactorType =

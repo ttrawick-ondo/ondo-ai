@@ -3,6 +3,8 @@ import { registerTestCommand } from './commands/test.js'
 import { registerFeatureCommand } from './commands/feature.js'
 import { registerRefactorCommand } from './commands/refactor.js'
 import { registerQACommand } from './commands/qa.js'
+import { registerDocsCommand } from './commands/docs.js'
+import { registerSecurityCommand } from './commands/security.js'
 
 const VERSION = '0.1.0'
 
@@ -19,6 +21,8 @@ export function createCLI(): Command {
   registerFeatureCommand(program)
   registerRefactorCommand(program)
   registerQACommand(program)
+  registerDocsCommand(program)
+  registerSecurityCommand(program)
 
   // Global options
   program
@@ -38,3 +42,5 @@ export { registerTestCommand } from './commands/test.js'
 export { registerFeatureCommand } from './commands/feature.js'
 export { registerRefactorCommand } from './commands/refactor.js'
 export { registerQACommand } from './commands/qa.js'
+export { registerDocsCommand } from './commands/docs.js'
+export { registerSecurityCommand } from './commands/security.js'

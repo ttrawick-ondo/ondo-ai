@@ -10,42 +10,73 @@ import type {
   GleanDataSource,
 } from '@/types'
 import { parseSSEResponse } from './streaming/encoder'
+import { withRetry, type RetryOptions } from './utils/retry'
+import { RateLimitError, APIError } from './errors/apiErrors'
+
+// Default retry options for API calls
+const DEFAULT_RETRY_OPTIONS: RetryOptions = {
+  maxRetries: 3,
+  baseDelayMs: 1000,
+  maxDelayMs: 30000,
+  retryableStatusCodes: [429, 500, 502, 503, 504],
+}
 
 class APIClient {
   private baseUrl: string
+  private retryOptions: RetryOptions
 
-  constructor(baseUrl: string = '') {
+  constructor(baseUrl: string = '', retryOptions: RetryOptions = DEFAULT_RETRY_OPTIONS) {
     this.baseUrl = baseUrl
+    this.retryOptions = retryOptions
   }
 
   private async fetch<T>(
     path: string,
     options?: RequestInit
   ): Promise<T> {
-    const response = await fetch(`${this.baseUrl}${path}`, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options?.headers,
-      },
-    })
+    return withRetry(async () => {
+      const response = await fetch(`${this.baseUrl}${path}`, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          ...options?.headers,
+        },
+      })
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({
-        message: response.statusText,
-      }))
-      throw new Error(error.message || 'API request failed')
-    }
+      if (!response.ok) {
+        const statusCode = response.status
 
-    return response.json()
+        // Handle rate limiting
+        if (statusCode === 429) {
+          const retryAfter = response.headers.get('retry-after')
+          const retryAfterSec = retryAfter ? parseInt(retryAfter, 10) : undefined
+          throw new RateLimitError('openai', retryAfterSec)
+        }
+
+        // Parse error response
+        const error = await response.json().catch(() => ({
+          message: response.statusText,
+        }))
+
+        throw new APIError(
+          error.message || 'API request failed',
+          statusCode,
+          error.code || 'API_ERROR'
+        )
+      }
+
+      return response.json()
+    }, this.retryOptions)
   }
 }
 
 export class ChatClient {
   private baseUrl: string
+  private retryOptions: RetryOptions
 
-  constructor(baseUrl: string = '') {
+  constructor(baseUrl: string = '', retryOptions: RetryOptions = DEFAULT_RETRY_OPTIONS) {
     this.baseUrl = baseUrl
+    this.retryOptions = retryOptions
   }
 
   async complete(
@@ -53,118 +84,205 @@ export class ChatClient {
       options?: ChatCompletionRequest['options'] & { stream?: false }
     }
   ): Promise<ChatCompletionResponse> {
-    const response = await fetch(`${this.baseUrl}/api/chat`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        ...request,
-        options: {
-          ...request.options,
-          stream: false,
+    return withRetry(async () => {
+      const response = await fetch(`${this.baseUrl}/api/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
-      }),
-    })
+        body: JSON.stringify({
+          ...request,
+          options: {
+            ...request.options,
+            stream: false,
+          },
+        }),
+      })
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({
-        message: response.statusText,
-      }))
-      throw new Error(error.message || 'Chat request failed')
-    }
+      if (!response.ok) {
+        const statusCode = response.status
 
-    return response.json()
+        // Handle rate limiting
+        if (statusCode === 429) {
+          const retryAfter = response.headers.get('retry-after')
+          const retryAfterSec = retryAfter ? parseInt(retryAfter, 10) : undefined
+          throw new RateLimitError('openai', retryAfterSec)
+        }
+
+        const error = await response.json().catch(() => ({
+          message: response.statusText,
+        }))
+        throw new APIError(
+          error.message || 'Chat request failed',
+          statusCode,
+          error.code || 'CHAT_ERROR'
+        )
+      }
+
+      return response.json()
+    }, this.retryOptions)
   }
 
   async stream(
     request: Omit<ChatCompletionRequest, 'options'> & {
       options?: Omit<ChatCompletionRequest['options'], 'stream'>
     },
-    callbacks: StreamCallbacks
+    callbacks: StreamCallbacks,
+    options: StreamOptions = {}
   ): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/api/chat`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        ...request,
-        options: {
-          ...request.options,
-          stream: true,
-        },
-      }),
-    })
+    const {
+      timeout = 120000, // 2 minutes default
+      chunkTimeout = 30000, // 30 seconds between chunks
+    } = options
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({
-        message: response.statusText,
-      }))
-      callbacks.onError?.(error.message || 'Stream request failed')
-      return
+    // Create abort controller for timeout
+    const controller = new AbortController()
+    let overallTimeoutId: ReturnType<typeof setTimeout> | undefined
+    let chunkTimeoutId: ReturnType<typeof setTimeout> | undefined
+
+    const clearTimeouts = () => {
+      if (overallTimeoutId) clearTimeout(overallTimeoutId)
+      if (chunkTimeoutId) clearTimeout(chunkTimeoutId)
     }
 
-    const reader = response.body?.getReader()
-    if (!reader) {
-      callbacks.onError?.('No response body')
-      return
+    const resetChunkTimeout = () => {
+      if (chunkTimeoutId) clearTimeout(chunkTimeoutId)
+      chunkTimeoutId = setTimeout(() => {
+        controller.abort()
+        callbacks.onError?.('Stream chunk timeout - no data received for 30 seconds')
+      }, chunkTimeout)
     }
 
-    const decoder = new TextDecoder()
-    let buffer = ''
+    // Set overall timeout
+    overallTimeoutId = setTimeout(() => {
+      controller.abort()
+      callbacks.onError?.('Stream timeout - overall request exceeded 2 minutes')
+    }, timeout)
 
     try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
+      const response = await fetch(`${this.baseUrl}/api/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...request,
+          options: {
+            ...request.options,
+            stream: true,
+          },
+        }),
+        signal: controller.signal,
+      })
 
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n\n')
+      if (!response.ok) {
+        clearTimeouts()
+        const statusCode = response.status
 
-        // Keep the last potentially incomplete line in the buffer
-        buffer = lines.pop() || ''
+        // Handle rate limiting
+        if (statusCode === 429) {
+          const retryAfter = response.headers.get('retry-after')
+          const retryAfterSec = retryAfter ? parseInt(retryAfter, 10) : undefined
+          callbacks.onError?.(`Rate limit exceeded. ${retryAfterSec ? `Retry after ${retryAfterSec} seconds.` : 'Please try again later.'}`)
+          return
+        }
 
-        for (const line of lines) {
-          const event = parseSSEResponse(line)
-          if (!event) continue
+        const error = await response.json().catch(() => ({
+          message: response.statusText,
+        }))
+        callbacks.onError?.(error.message || 'Stream request failed')
+        return
+      }
 
-          switch (event.type) {
-            case 'start':
-              callbacks.onStart?.()
-              break
-            case 'delta':
-              if (event.data.delta) {
-                callbacks.onDelta?.(event.data.delta)
-              }
-              if (event.data.tool_call_delta) {
-                callbacks.onToolCallDelta?.(event.data.tool_call_delta)
-              }
-              break
-            case 'done':
-              if (event.data.usage && event.data.metadata) {
-                callbacks.onDone?.({
-                  id: event.data.id || '',
-                  message: {
-                    role: 'assistant',
-                    content: event.data.content ?? null,
-                    ...(event.data.tool_calls && { tool_calls: event.data.tool_calls }),
-                  },
-                  metadata: event.data.metadata,
-                  usage: event.data.usage,
-                })
-              }
-              break
-            case 'error':
-              callbacks.onError?.(event.data.error || 'Unknown error')
-              break
+      const reader = response.body?.getReader()
+      if (!reader) {
+        clearTimeouts()
+        callbacks.onError?.('No response body')
+        return
+      }
+
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      // Start chunk timeout monitoring
+      resetChunkTimeout()
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+
+          if (done) {
+            clearTimeouts()
+            break
+          }
+
+          // Reset chunk timeout on each chunk received
+          resetChunkTimeout()
+
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n\n')
+
+          // Keep the last potentially incomplete line in the buffer
+          buffer = lines.pop() || ''
+
+          for (const line of lines) {
+            const event = parseSSEResponse(line)
+            if (!event) continue
+
+            switch (event.type) {
+              case 'start':
+                callbacks.onStart?.()
+                break
+              case 'delta':
+                if (event.data.delta) {
+                  callbacks.onDelta?.(event.data.delta)
+                }
+                if (event.data.tool_call_delta) {
+                  callbacks.onToolCallDelta?.(event.data.tool_call_delta)
+                }
+                break
+              case 'done':
+                clearTimeouts()
+                if (event.data.usage && event.data.metadata) {
+                  callbacks.onDone?.({
+                    id: event.data.id || '',
+                    message: {
+                      role: 'assistant',
+                      content: event.data.content ?? null,
+                      ...(event.data.tool_calls && { tool_calls: event.data.tool_calls }),
+                    },
+                    metadata: event.data.metadata,
+                    usage: event.data.usage,
+                  })
+                }
+                break
+              case 'error':
+                clearTimeouts()
+                callbacks.onError?.(event.data.error || 'Unknown error')
+                break
+            }
           }
         }
+      } finally {
+        clearTimeouts()
+        reader.releaseLock()
       }
     } catch (error) {
+      clearTimeouts()
+      if (error instanceof Error && error.name === 'AbortError') {
+        // Timeout was already reported via callback
+        return
+      }
       callbacks.onError?.(error instanceof Error ? error.message : 'Stream error')
     }
   }
+}
+
+export interface StreamOptions {
+  /** Overall timeout in ms (default: 120000 = 2 minutes) */
+  timeout?: number
+  /** Timeout between chunks in ms (default: 30000 = 30 seconds) */
+  chunkTimeout?: number
 }
 
 export class ProvidersClient {

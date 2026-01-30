@@ -11,6 +11,7 @@ export interface RefactorCommandOptions {
   interactive?: boolean
   verbose?: boolean
   dryRun?: boolean
+  commit?: boolean
 }
 
 const REFACTOR_TYPES: Array<{ name: string; value: RefactorType; description: string }> = [
@@ -35,6 +36,7 @@ export function registerRefactorCommand(program: Command): void {
     .option('-i, --interactive', 'Interactive mode for plan review', true)
     .option('-v, --verbose', 'Verbose output', false)
     .option('--dry-run', 'Show what would be done without making changes', false)
+    .option('--commit', 'Commit changes after successful refactoring', false)
     .action(async (options: RefactorCommandOptions) => {
       const spinner = createSpinner('Initializing Refactor Agent...')
 
@@ -124,6 +126,7 @@ export function registerRefactorCommand(program: Command): void {
             refactorType,
             verbose: options.verbose,
             dryRun: options.dryRun,
+            enableCommit: options.commit,
           },
         })
 

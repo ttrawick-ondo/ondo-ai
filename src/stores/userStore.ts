@@ -9,9 +9,17 @@ interface UserState {
   preferences: UserPreferences
 }
 
+interface UpdateProfileInput {
+  name: string
+  email: string
+  avatarUrl?: string
+}
+
 interface UserActions {
   setUser: (user: User | null) => void
   updatePreferences: (prefs: Partial<UserPreferences>) => void
+  updateProfile: (input: UpdateProfileInput) => Promise<void>
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>
   logout: () => void
 }
 
@@ -40,6 +48,36 @@ export const useUserStore = create<UserStore>()(
             set((state) => ({
               preferences: { ...state.preferences, ...prefs },
             }))
+          },
+
+          updateProfile: async (input) => {
+            // TODO: In production, this would call an API endpoint
+            // For now, we just update the local state
+            set((state) => ({
+              currentUser: state.currentUser
+                ? {
+                    ...state.currentUser,
+                    name: input.name,
+                    email: input.email,
+                    avatarUrl: input.avatarUrl,
+                  }
+                : null,
+            }))
+
+            // Simulate API call
+            await new Promise((resolve) => setTimeout(resolve, 500))
+          },
+
+          changePassword: async (_currentPassword, _newPassword) => {
+            // TODO: In production, this would call an API endpoint
+            // For now, we just simulate the password change
+            // Simulate API call
+            await new Promise((resolve) => setTimeout(resolve, 500))
+
+            // In a real implementation:
+            // 1. Validate current password
+            // 2. Hash and store new password
+            // 3. Invalidate other sessions if desired
           },
 
           logout: () => {

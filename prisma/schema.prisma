@@ -1,0 +1,307 @@
+// Ondo AI Database Schema
+// Supports SQLite (dev) and PostgreSQL (production)
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ============================================================================
+// User & Authentication
+// ============================================================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  avatar        String?
+  passwordHash  String?
+  role          String    @default("user") // "admin", "user"
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastLoginAt   DateTime?
+
+  // Settings stored as JSON
+  settings      String?   // JSON: { theme, defaultModel, defaultProvider, notifications }
+
+  // Relations
+  workspaces    WorkspaceMember[]
+  ownedWorkspaces Workspace[] @relation("WorkspaceOwner")
+  conversations Conversation[]
+  messages      Message[]
+  prompts       Prompt[]
+  projects      Project[]
+  apiKeys       ApiKey[]
+
+  @@index([email])
+}
+
+model ApiKey {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  keyHash     String   @unique
+  prefix      String   // First 8 chars for identification
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([keyHash])
+}
+
+// ============================================================================
+// Workspace & Teams
+// ============================================================================
+
+model Workspace {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  slug        String   @unique
+  ownerId     String
+  settings    String?  // JSON: { defaultModel, allowedProviders, features }
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  owner       User     @relation("WorkspaceOwner", fields: [ownerId], references: [id])
+  members     WorkspaceMember[]
+  projects    Project[]
+  prompts     Prompt[]
+  invitations WorkspaceInvitation[]
+
+  @@index([slug])
+  @@index([ownerId])
+}
+
+model WorkspaceMember {
+  id          String   @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        String   @default("member") // "owner", "admin", "member"
+  joinedAt    DateTime @default(now())
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([workspaceId])
+  @@index([userId])
+}
+
+model WorkspaceInvitation {
+  id          String    @id @default(cuid())
+  workspaceId String
+  email       String
+  role        String    @default("member")
+  token       String    @unique
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([email])
+  @@index([token])
+}
+
+// ============================================================================
+// Projects
+// ============================================================================
+
+model Project {
+  id          String   @id @default(cuid())
+  workspaceId String
+  ownerId     String
+  name        String
+  description String?
+  color       String?  // Hex color for UI
+  icon        String?
+  settings    String?  // JSON: { defaultModel, systemPrompt, tools }
+  archived    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  owner       User          @relation(fields: [ownerId], references: [id])
+  conversations Conversation[]
+  prompts     Prompt[]
+
+  @@index([workspaceId])
+  @@index([ownerId])
+}
+
+// ============================================================================
+// Conversations & Messages
+// ============================================================================
+
+model Conversation {
+  id          String   @id @default(cuid())
+  projectId   String?
+  userId      String
+  title       String
+  model       String
+  provider    String
+  systemPrompt String?
+  metadata    String?  // JSON: { temperature, maxTokens, etc. }
+  archived    Boolean  @default(false)
+  pinned      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  project     Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages    Message[]
+
+  @@index([projectId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String
+  userId         String?
+  role           String   // "user", "assistant", "system", "tool"
+  content        String
+  model          String?
+  provider       String?
+
+  // Token usage
+  inputTokens    Int?
+  outputTokens   Int?
+  estimatedCost  Float?
+
+  // Tool calls
+  toolCalls      String?  // JSON array of tool calls
+  toolCallId     String?  // For tool response messages
+
+  // Attachments
+  attachments    String?  // JSON array: [{ type, name, url, content }]
+
+  // Metadata
+  metadata       String?  // JSON: { processingTimeMs, finishReason, etc. }
+  createdAt      DateTime @default(now())
+
+  // Relations
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// Prompts (Templates)
+// ============================================================================
+
+model Prompt {
+  id          String   @id @default(cuid())
+  workspaceId String?
+  projectId   String?
+  userId      String
+  name        String
+  description String?
+  content     String
+  variables   String?  // JSON array: [{ name, type, defaultValue, description }]
+  category    String?
+  tags        String?  // JSON array of strings
+  isPublic    Boolean  @default(false)
+  usageCount  Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project     Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([projectId])
+  @@index([userId])
+  @@index([category])
+}
+
+// ============================================================================
+// Agent Tasks (for packages/agent)
+// ============================================================================
+
+model AgentTask {
+  id          String   @id @default(cuid())
+  type        String   // "test", "qa", "feature", "refactor"
+  title       String
+  description String
+  status      String   @default("pending") // "pending", "running", "completed", "failed", "cancelled"
+  priority    Int      @default(0)
+
+  // Execution details
+  agentRole   String?
+  iterations  Int      @default(0)
+  toolsUsed   String?  // JSON array of tool names
+  changes     String?  // JSON array: [{ file, type, description }]
+
+  // Results
+  success     Boolean?
+  summary     String?
+  error       String?
+
+  // Timing
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  events      AgentTaskEvent[]
+
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model AgentTaskEvent {
+  id        String   @id @default(cuid())
+  taskId    String
+  type      String   // "started", "iteration_start", "tool_call", "tool_result", "thinking", "completed", "failed"
+  data      String?  // JSON
+  createdAt DateTime @default(now())
+
+  task      AgentTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// Usage & Analytics
+// ============================================================================
+
+model UsageRecord {
+  id          String   @id @default(cuid())
+  userId      String
+  workspaceId String?
+  provider    String
+  model       String
+  inputTokens Int
+  outputTokens Int
+  cost        Float?
+  metadata    String?  // JSON: { conversationId, messageId, etc. }
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([workspaceId])
+  @@index([provider])
+  @@index([createdAt])
+}

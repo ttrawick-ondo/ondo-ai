@@ -14,6 +14,7 @@ export function registerFeatureCommand(program) {
         .option('-a, --auto-approve', 'Auto-approve all actions without prompting', false)
         .option('-v, --verbose', 'Verbose output', false)
         .option('--dry-run', 'Show what would be done without making changes', false)
+        .option('--commit', 'Commit changes after successful implementation', false)
         .action(async (options) => {
         const spinner = createSpinner('Initializing Feature Agent...');
         try {
@@ -119,6 +120,7 @@ export function registerFeatureCommand(program) {
                     featureSpec,
                     verbose: options.verbose,
                     dryRun: options.dryRun,
+                    enableCommit: options.commit,
                 },
             });
             if (options.dryRun) {

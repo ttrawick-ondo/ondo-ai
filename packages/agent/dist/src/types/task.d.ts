@@ -36,6 +36,14 @@ export interface TaskOptions {
     testFilter?: string;
     featureSpec?: string;
     refactorType?: RefactorType;
+    docType?: 'readme' | 'api' | 'changelog' | 'architecture' | 'all';
+    outputPath?: string;
+    includeExamples?: boolean;
+    format?: string;
+    scanType?: 'full' | 'dependencies' | 'secrets' | 'sast';
+    reportPath?: string;
+    severityThreshold?: string;
+    enableCommit?: boolean;
 }
 export type RefactorType = 'extract-function' | 'extract-component' | 'rename' | 'move' | 'simplify' | 'optimize' | 'modernize';
 export interface TaskResult {
