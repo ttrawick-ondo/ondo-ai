@@ -94,7 +94,8 @@ export interface Message {
 export interface Conversation {
   id: string
   title: string
-  projectId?: string
+  projectId?: string | null
+  folderId?: string | null       // Optional folder within project
   workspaceId?: string
   userId: string
   modelId?: string
@@ -102,12 +103,27 @@ export interface Conversation {
   lastMessageAt: Date
   createdAt: Date
   updatedAt: Date
+  // Branching support
+  parentId?: string | null       // Parent conversation for branches
+  branchPointId?: string | null  // Message ID where branched from
+  pinned?: boolean               // Pinned to top
+  archived?: boolean
 }
 
 export interface CreateConversationInput {
   title?: string
   projectId?: string
+  folderId?: string | null
   workspaceId?: string
+  // For branching
+  parentId?: string | null
+  branchPointId?: string | null
+}
+
+export interface BranchConversationInput {
+  sourceConversationId: string
+  branchPointMessageId: string   // Message ID to branch from
+  title?: string
 }
 
 export interface SendMessageInput {

@@ -10,11 +10,15 @@ import type { Conversation, Message } from '@/generated/prisma'
 export interface CreateConversationInput {
   userId: string
   projectId?: string
+  folderId?: string | null
   title: string
   model: string
   provider: string
   systemPrompt?: string
   metadata?: Record<string, unknown>
+  // Branching support
+  parentId?: string | null
+  branchPointId?: string | null
 }
 
 export interface CreateMessageInput {
@@ -48,11 +52,14 @@ export async function createConversation(
     data: {
       userId: input.userId,
       projectId: input.projectId,
+      folderId: input.folderId ?? null,
       title: input.title,
       model: input.model,
       provider: input.provider,
       systemPrompt: input.systemPrompt,
       metadata: input.metadata ? JSON.stringify(input.metadata) : null,
+      parentId: input.parentId ?? null,
+      branchPointId: input.branchPointId ?? null,
     },
   })
 }
@@ -106,6 +113,8 @@ export async function updateConversation(
     systemPrompt: string
     archived: boolean
     pinned: boolean
+    projectId: string | null
+    folderId: string | null
     metadata: Record<string, unknown>
   }>
 ): Promise<Conversation> {
@@ -230,4 +239,212 @@ export async function getConversationStats(userId: string): Promise<{
       (messageStats._sum.inputTokens ?? 0) + (messageStats._sum.outputTokens ?? 0),
     estimatedCost: messageStats._sum.estimatedCost ?? 0,
   }
+}
+
+// ============================================================================
+// Branching
+// ============================================================================
+
+export interface BranchConversationInput {
+  userId: string
+  sourceConversationId: string
+  branchPointMessageId: string
+  title?: string
+}
+
+export interface ConversationWithBranches extends Conversation {
+  branches: Conversation[]
+  parent: Conversation | null
+}
+
+export async function branchConversation(
+  input: BranchConversationInput
+): Promise<Conversation> {
+  // Get the source conversation
+  const source = await prisma.conversation.findUnique({
+    where: { id: input.sourceConversationId },
+    include: { messages: { orderBy: { createdAt: 'asc' } } },
+  })
+
+  if (!source) {
+    throw new Error(`Source conversation ${input.sourceConversationId} not found`)
+  }
+
+  // Find the branch point message
+  const branchPointIndex = source.messages.findIndex(
+    (m) => m.id === input.branchPointMessageId
+  )
+  if (branchPointIndex === -1) {
+    throw new Error(`Branch point message ${input.branchPointMessageId} not found`)
+  }
+
+  // Get messages up to and including the branch point
+  const messagesToCopy = source.messages.slice(0, branchPointIndex + 1)
+
+  // Create the new conversation
+  const branchTitle = input.title || `Branch of ${source.title}`
+  const newConversation = await prisma.conversation.create({
+    data: {
+      userId: input.userId,
+      projectId: source.projectId,
+      folderId: source.folderId,
+      title: branchTitle,
+      model: source.model,
+      provider: source.provider,
+      systemPrompt: source.systemPrompt,
+      metadata: source.metadata,
+      parentId: source.id,
+      branchPointId: input.branchPointMessageId,
+    },
+  })
+
+  // Copy messages to the new conversation
+  for (const msg of messagesToCopy) {
+    await prisma.message.create({
+      data: {
+        conversationId: newConversation.id,
+        userId: msg.userId,
+        role: msg.role,
+        content: msg.content,
+        model: msg.model,
+        provider: msg.provider,
+        inputTokens: msg.inputTokens,
+        outputTokens: msg.outputTokens,
+        estimatedCost: msg.estimatedCost,
+        toolCalls: msg.toolCalls,
+        toolCallId: msg.toolCallId,
+        attachments: msg.attachments,
+        metadata: msg.metadata,
+      },
+    })
+  }
+
+  return newConversation
+}
+
+export async function getConversationBranches(
+  conversationId: string
+): Promise<Conversation[]> {
+  return prisma.conversation.findMany({
+    where: { parentId: conversationId },
+    orderBy: { createdAt: 'desc' },
+  })
+}
+
+export async function getConversationWithBranches(
+  id: string
+): Promise<ConversationWithBranches | null> {
+  const conversation = await prisma.conversation.findUnique({
+    where: { id },
+    include: {
+      branches: {
+        orderBy: { createdAt: 'desc' },
+      },
+      parent: true,
+    },
+  })
+
+  return conversation
+}
+
+// ============================================================================
+// Pinned Conversations
+// ============================================================================
+
+export async function getPinnedConversations(
+  userId: string,
+  options?: {
+    projectId?: string
+    limit?: number
+  }
+): Promise<Conversation[]> {
+  return prisma.conversation.findMany({
+    where: {
+      userId,
+      pinned: true,
+      projectId: options?.projectId,
+      archived: false,
+    },
+    orderBy: { updatedAt: 'desc' },
+    take: options?.limit ?? 20,
+  })
+}
+
+export async function toggleConversationPin(
+  id: string
+): Promise<Conversation> {
+  const conversation = await prisma.conversation.findUnique({
+    where: { id },
+  })
+  if (!conversation) {
+    throw new Error(`Conversation ${id} not found`)
+  }
+
+  return prisma.conversation.update({
+    where: { id },
+    data: { pinned: !conversation.pinned },
+  })
+}
+
+// ============================================================================
+// Search
+// ============================================================================
+
+export async function searchConversations(
+  userId: string,
+  query: string,
+  options?: {
+    projectId?: string
+    folderId?: string
+    limit?: number
+    includeArchived?: boolean
+  }
+): Promise<Conversation[]> {
+  // SQLite uses LIKE for searching
+  return prisma.conversation.findMany({
+    where: {
+      userId,
+      projectId: options?.projectId,
+      folderId: options?.folderId,
+      archived: options?.includeArchived ? undefined : false,
+      OR: [
+        { title: { contains: query } },
+        // Search in messages content
+        {
+          messages: {
+            some: {
+              content: { contains: query },
+            },
+          },
+        },
+      ],
+    },
+    orderBy: { updatedAt: 'desc' },
+    take: options?.limit ?? 20,
+  })
+}
+
+// ============================================================================
+// Recent Conversations (without project/folder)
+// ============================================================================
+
+export async function getRecentConversations(
+  userId: string,
+  options?: {
+    limit?: number
+    excludeProjected?: boolean
+  }
+): Promise<Conversation[]> {
+  return prisma.conversation.findMany({
+    where: {
+      userId,
+      archived: false,
+      ...(options?.excludeProjected && {
+        projectId: null,
+        folderId: null,
+      }),
+    },
+    orderBy: { updatedAt: 'desc' },
+    take: options?.limit ?? 10,
+  })
 }

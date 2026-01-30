@@ -32,7 +32,7 @@ export function Sidebar() {
     <aside
       className={cn(
         'flex h-full flex-col border-r bg-muted/30 transition-all duration-300',
-        isOpen ? 'w-[280px]' : 'w-0 overflow-hidden border-r-0'
+        isOpen ? 'w-[360px]' : 'w-0 overflow-hidden border-r-0'
       )}
       style={isOpen ? { width: `${width}px` } : undefined}
     >

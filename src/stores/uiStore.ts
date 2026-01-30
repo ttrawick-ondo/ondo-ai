@@ -37,7 +37,7 @@ export const useUIStore = create<UIStore>()(
     persist(
       (set) => ({
         sidebarOpen: true,
-        sidebarWidth: 280,
+        sidebarWidth: 360,
         activeModal: null,
         modalProps: {},
         commandPaletteOpen: false,
@@ -53,7 +53,7 @@ export const useUIStore = create<UIStore>()(
           },
 
           setSidebarWidth: (width) => {
-            set({ sidebarWidth: Math.min(Math.max(width, 200), 400) })
+            set({ sidebarWidth: Math.min(Math.max(width, 280), 600) })
           },
 
           openModal: (type, props = {}) => {
@@ -83,10 +83,22 @@ export const useUIStore = create<UIStore>()(
       }),
       {
         name: 'ui-store',
+        version: 2, // Bump this to trigger migration
         partialize: (state) => ({
           sidebarOpen: state.sidebarOpen,
           sidebarWidth: state.sidebarWidth,
         }),
+        migrate: (persistedState, version) => {
+          const state = persistedState as { sidebarOpen?: boolean; sidebarWidth?: number }
+          // Migrate from version 0 or 1 to version 2
+          if (version < 2) {
+            // Update to wider sidebar default
+            if (!state.sidebarWidth || state.sidebarWidth < 360) {
+              state.sidebarWidth = 360
+            }
+          }
+          return state
+        },
       }
     ),
     { name: 'ui-store' }

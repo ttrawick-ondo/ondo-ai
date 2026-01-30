@@ -6,9 +6,10 @@ import type { Message } from '@/types'
 interface MessageListProps {
   messages: Message[]
   streamingMessage?: string
+  onBranch?: (messageId: string) => void
 }
 
-export function MessageList({ messages, streamingMessage }: MessageListProps) {
+export function MessageList({ messages, streamingMessage, onBranch }: MessageListProps) {
   if (messages.length === 0 && !streamingMessage) {
     return (
       <div className="flex h-full items-center justify-center text-muted-foreground">
@@ -20,7 +21,11 @@ export function MessageList({ messages, streamingMessage }: MessageListProps) {
   return (
     <div className="flex flex-col gap-6">
       {messages.map((message) => (
-        <MessageBubble key={message.id} message={message} />
+        <MessageBubble
+          key={message.id}
+          message={message}
+          onBranch={onBranch}
+        />
       ))}
       {streamingMessage && (
         <MessageBubble

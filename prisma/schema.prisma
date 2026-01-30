@@ -134,6 +134,7 @@ model Project {
   workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   owner       User          @relation(fields: [ownerId], references: [id])
   conversations Conversation[]
+  folders     Folder[]
   prompts     Prompt[]
 
   @@index([workspaceId])
@@ -141,30 +142,65 @@ model Project {
 }
 
 // ============================================================================
-// Conversations & Messages
+// Folders (Nested Organization)
 // ============================================================================
 
-model Conversation {
+model Folder {
   id          String   @id @default(cuid())
-  projectId   String?
-  userId      String
-  title       String
-  model       String
-  provider    String
-  systemPrompt String?
-  metadata    String?  // JSON: { temperature, maxTokens, etc. }
-  archived    Boolean  @default(false)
-  pinned      Boolean  @default(false)
+  projectId   String
+  parentId    String?              // For nested subfolders
+  name        String
+  color       String?
+  icon        String?
+  position    Int      @default(0) // For ordering within parent
+  depth       Int      @default(0) // Nesting level (0 = root folder)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   // Relations
-  project     Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  messages    Message[]
+  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent        Folder?        @relation("FolderNesting", fields: [parentId], references: [id], onDelete: Cascade)
+  children      Folder[]       @relation("FolderNesting")
+  conversations Conversation[]
 
   @@index([projectId])
+  @@index([parentId])
+}
+
+// ============================================================================
+// Conversations & Messages
+// ============================================================================
+
+model Conversation {
+  id             String   @id @default(cuid())
+  projectId      String?
+  folderId       String?              // Optional folder within project
+  userId         String
+  title          String
+  model          String
+  provider       String
+  systemPrompt   String?
+  metadata       String?  // JSON: { temperature, maxTokens, etc. }
+  archived       Boolean  @default(false)
+  pinned         Boolean  @default(false)
+  // Branching support
+  parentId       String?              // Parent conversation for branches
+  branchPointId  String?              // Message ID where branched from
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  project     Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  folder      Folder?        @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages    Message[]
+  parent      Conversation?  @relation("Branches", fields: [parentId], references: [id], onDelete: SetNull)
+  branches    Conversation[] @relation("Branches")
+
+  @@index([projectId])
+  @@index([folderId])
   @@index([userId])
+  @@index([parentId])
   @@index([createdAt])
 }
 

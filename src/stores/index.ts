@@ -1,6 +1,7 @@
 export * from './chatStore'
 export * from './projectStore'
 export * from './workspaceStore'
+export * from './folderStore'
 export * from './promptStore'
 export * from './uiStore'
 export * from './userStore'

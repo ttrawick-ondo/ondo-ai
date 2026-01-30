@@ -26,7 +26,7 @@ interface ChatState {
 
 interface ChatActions {
   setActiveConversation: (id: string | null) => void
-  createConversation: (title?: string, projectId?: string, modelId?: string) => string
+  createConversation: (title?: string, projectId?: string, modelId?: string, folderId?: string | null) => string
   deleteConversation: (id: string) => void
   updateConversationTitle: (id: string, title: string) => void
   updateConversationModel: (id: string, modelId: string) => void
@@ -36,6 +36,15 @@ interface ChatActions {
   // Tool-related actions
   setEnabledTools: (toolNames: string[]) => void
   executeToolCalls: (toolCalls: ToolCall[]) => Promise<ToolExecutionRecord[]>
+  // Folder & organization actions
+  moveConversationToFolder: (conversationId: string, folderId: string | null, projectId?: string | null) => void
+  moveConversationToProject: (conversationId: string, projectId: string | null) => void
+  // Pinning actions
+  toggleConversationPinned: (id: string) => void
+  // Branching actions
+  branchConversation: (sourceId: string, branchPointMessageId: string, title?: string) => string
+  // Search
+  searchConversations: (query: string, projectId?: string) => Conversation[]
 }
 
 type ChatStore = ChatState & { actions: ChatActions }
@@ -65,7 +74,7 @@ export const useChatStore = create<ChatStore>()(
           set({ activeConversationId: id })
         },
 
-        createConversation: (title = 'New conversation', projectId, modelId) => {
+        createConversation: (title = 'New conversation', projectId, modelId, folderId = null) => {
           const id = `conv-${generateId()}`
           const now = new Date()
 
@@ -73,12 +82,17 @@ export const useChatStore = create<ChatStore>()(
             id,
             title,
             projectId,
+            folderId,
             modelId,
             userId: 'user-1',
             messageCount: 0,
             lastMessageAt: now,
             createdAt: now,
             updatedAt: now,
+            pinned: false,
+            archived: false,
+            parentId: null,
+            branchPointId: null,
           }
 
           set((state) => ({
@@ -451,6 +465,141 @@ export const useChatStore = create<ChatStore>()(
           set({ isExecutingTools: false, pendingToolCalls: [] })
           return results
         },
+
+        moveConversationToFolder: (conversationId, folderId, projectId) => {
+          set((state) => {
+            const conversation = state.conversations[conversationId]
+            if (!conversation) return state
+
+            return {
+              conversations: {
+                ...state.conversations,
+                [conversationId]: {
+                  ...conversation,
+                  folderId,
+                  projectId: projectId !== undefined ? projectId : conversation.projectId,
+                  updatedAt: new Date(),
+                },
+              },
+            }
+          })
+        },
+
+        moveConversationToProject: (conversationId, projectId) => {
+          set((state) => {
+            const conversation = state.conversations[conversationId]
+            if (!conversation) return state
+
+            return {
+              conversations: {
+                ...state.conversations,
+                [conversationId]: {
+                  ...conversation,
+                  projectId,
+                  folderId: null, // Remove from folder when moving to different project
+                  updatedAt: new Date(),
+                },
+              },
+            }
+          })
+        },
+
+        toggleConversationPinned: (id) => {
+          set((state) => {
+            const conversation = state.conversations[id]
+            if (!conversation) return state
+
+            return {
+              conversations: {
+                ...state.conversations,
+                [id]: {
+                  ...conversation,
+                  pinned: !conversation.pinned,
+                  updatedAt: new Date(),
+                },
+              },
+            }
+          })
+        },
+
+        branchConversation: (sourceId, branchPointMessageId, title) => {
+          const state = get()
+          const sourceConversation = state.conversations[sourceId]
+          const sourceMessages = state.messagesByConversation[sourceId] || []
+
+          if (!sourceConversation) {
+            throw new Error(`Source conversation ${sourceId} not found`)
+          }
+
+          // Find the branch point message index
+          const branchPointIndex = sourceMessages.findIndex(
+            (m) => m.id === branchPointMessageId
+          )
+          if (branchPointIndex === -1) {
+            throw new Error(`Branch point message ${branchPointMessageId} not found`)
+          }
+
+          // Create new conversation
+          const id = `conv-${generateId()}`
+          const now = new Date()
+          const branchTitle = title || `Branch of ${sourceConversation.title}`
+
+          // Copy messages up to and including the branch point
+          const copiedMessages = sourceMessages.slice(0, branchPointIndex + 1).map((msg) => ({
+            ...msg,
+            id: `msg-${generateId()}`,
+            conversationId: id,
+            createdAt: new Date(msg.createdAt),
+          }))
+
+          const newConversation: Conversation = {
+            id,
+            title: branchTitle,
+            projectId: sourceConversation.projectId,
+            folderId: sourceConversation.folderId,
+            modelId: sourceConversation.modelId,
+            userId: sourceConversation.userId,
+            messageCount: copiedMessages.length,
+            lastMessageAt: now,
+            createdAt: now,
+            updatedAt: now,
+            pinned: false,
+            archived: false,
+            parentId: sourceId,
+            branchPointId: branchPointMessageId,
+          }
+
+          set((state) => ({
+            conversations: { ...state.conversations, [id]: newConversation },
+            messagesByConversation: { ...state.messagesByConversation, [id]: copiedMessages },
+            activeConversationId: id,
+          }))
+
+          return id
+        },
+
+        searchConversations: (query, projectId) => {
+          const state = get()
+          const lowercaseQuery = query.toLowerCase()
+
+          return Object.values(state.conversations).filter((conv) => {
+            // Filter by project if specified
+            if (projectId !== undefined && conv.projectId !== projectId) {
+              return false
+            }
+
+            // Search in title
+            if (conv.title.toLowerCase().includes(lowercaseQuery)) {
+              return true
+            }
+
+            // Search in messages
+            const messages = state.messagesByConversation[conv.id] || []
+            return messages.some((msg) =>
+              msg.content.toLowerCase().includes(lowercaseQuery)
+            )
+          })
+        },
       },
     }),
     { name: 'chat-store' }
@@ -484,3 +633,83 @@ export const usePendingToolCalls = () => useChatStore((state) => state.pendingTo
 
 // Return actions directly from store - they're stable references
 export const useChatActions = () => useChatStore.getState().actions
+
+// Pinned conversations selector
+export const usePinnedConversations = (): Conversation[] => {
+  const conversations = useChatStore((state) => state.conversations)
+  return useMemo(
+    () =>
+      Object.values(conversations)
+        .filter((c) => c.pinned && !c.archived)
+        .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()),
+    [conversations]
+  )
+}
+
+// Conversations by folder selector
+export const useConversationsByFolder = (folderId: string | null): Conversation[] => {
+  const conversations = useChatStore((state) => state.conversations)
+  return useMemo(
+    () =>
+      Object.values(conversations)
+        .filter((c) => c.folderId === folderId && !c.archived)
+        .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()),
+    [conversations, folderId]
+  )
+}
+
+// Conversations by project (not in any folder)
+export const useUnorganizedConversations = (projectId: string): Conversation[] => {
+  const conversations = useChatStore((state) => state.conversations)
+  return useMemo(
+    () =>
+      Object.values(conversations)
+        .filter((c) => c.projectId === projectId && !c.folderId && !c.archived)
+        .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()),
+    [conversations, projectId]
+  )
+}
+
+// Recent conversations (no project)
+export const useRecentConversations = (limit = 10): Conversation[] => {
+  const conversations = useChatStore((state) => state.conversations)
+  return useMemo(
+    () =>
+      Object.values(conversations)
+        .filter((c) => !c.projectId && !c.archived)
+        .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime())
+        .slice(0, limit),
+    [conversations, limit]
+  )
+}
+
+// Conversation branches selector
+export const useConversationBranches = (conversationId: string): Conversation[] => {
+  const conversations = useChatStore((state) => state.conversations)
+  return useMemo(
+    () =>
+      Object.values(conversations)
+        .filter((c) => c.parentId === conversationId)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+    [conversations, conversationId]
+  )
+}
+
+// Parent conversation selector
+export const useParentConversation = (conversationId: string): Conversation | null => {
+  const conversations = useChatStore((state) => state.conversations)
+  const conversation = conversations[conversationId]
+  return conversation?.parentId ? conversations[conversation.parentId] ?? null : null
+}
+
+// Conversations by project
+export const useConversationsByProject = (projectId: string | null): Conversation[] => {
+  const conversations = useChatStore((state) => state.conversations)
+  return useMemo(
+    () =>
+      Object.values(conversations)
+        .filter((c) => c.projectId === projectId && !c.archived)
+        .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()),
+    [conversations, projectId]
+  )
+}

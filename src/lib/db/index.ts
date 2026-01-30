@@ -65,6 +65,7 @@ export type {
   WorkspaceMember,
   WorkspaceInvitation,
   Project,
+  Folder,
   Conversation,
   Message,
   Prompt,

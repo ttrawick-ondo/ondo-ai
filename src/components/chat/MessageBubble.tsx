@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Copy, Check, User, Bot, RotateCcw, Wrench } from 'lucide-react'
+import { Copy, Check, User, Bot, RotateCcw, Wrench, GitBranch } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -21,9 +21,10 @@ import { useCurrentUser, useModels, useIsExecutingTools, useShowRoutingIndicator
 interface MessageBubbleProps {
   message: Message
   isStreaming?: boolean
+  onBranch?: (messageId: string) => void
 }
 
-export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
+export function MessageBubble({ message, isStreaming, onBranch }: MessageBubbleProps) {
   const [copied, setCopied] = useState(false)
   const user = useCurrentUser()
   const models = useModels()
@@ -223,6 +224,22 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom">Regenerate</TooltipContent>
+              </Tooltip>
+            )}
+
+            {!isStreaming && onBranch && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => onBranch(message.id)}
+                  >
+                    <GitBranch className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Branch from here</TooltipContent>
               </Tooltip>
             )}
           </TooltipProvider>

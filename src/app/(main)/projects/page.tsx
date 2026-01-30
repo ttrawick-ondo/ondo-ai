@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, FolderKanban, MessageSquare, MoreHorizontal, Pencil, Trash2 } from 'lucide-react'
+import { Plus, FolderKanban, MessageSquare, Folder, MoreHorizontal, Pencil, Trash2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { cn, formatRelativeTime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -23,21 +23,25 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { useProjects, useProjectActions, useActiveWorkspace } from '@/stores'
+import { useProjects, useProjectActions, useFolders } from '@/stores'
 import { PROJECT_COLORS } from '@/types'
 
 export default function ProjectsPage() {
   const router = useRouter()
   const projects = useProjects()
-  const activeWorkspace = useActiveWorkspace()
+  const folders = useFolders()
   const { createProject, deleteProject, setActiveProject } = useProjectActions()
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [newProject, setNewProject] = useState({ name: '', description: '', color: PROJECT_COLORS[0] as string })
 
-  // Filter projects by workspace
-  const filteredProjects = projects.filter(
-    (p) => (activeWorkspace ? p.workspaceId === activeWorkspace.id : !p.workspaceId)
-  )
+  // Show all projects (same as sidebar)
+  const filteredProjects = projects
+
+  // Count folders per project
+  const folderCountByProject = folders.reduce((acc, folder) => {
+    acc[folder.projectId] = (acc[folder.projectId] || 0) + 1
+    return acc
+  }, {} as Record<string, number>)
 
   const handleCreate = () => {
     if (!newProject.name.trim()) return
@@ -45,7 +49,6 @@ export default function ProjectsPage() {
       name: newProject.name,
       description: newProject.description,
       color: newProject.color,
-      workspaceId: activeWorkspace?.id,
     })
     setNewProject({ name: '', description: '', color: PROJECT_COLORS[0] })
     setIsCreateOpen(false)
@@ -62,8 +65,7 @@ export default function ProjectsPage() {
         <div>
           <h1 className="text-2xl font-semibold">Projects</h1>
           <p className="text-muted-foreground">
-            Organize your conversations into projects
-            {activeWorkspace && ` in ${activeWorkspace.name}`}
+            Organize your conversations into projects and folders
           </p>
         </div>
         <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
@@ -196,6 +198,12 @@ export default function ProjectsPage() {
                     <MessageSquare className="h-4 w-4" />
                     <span>{project.conversationCount} conversations</span>
                   </div>
+                  {folderCountByProject[project.id] > 0 && (
+                    <div className="flex items-center gap-1">
+                      <Folder className="h-4 w-4" />
+                      <span>{folderCountByProject[project.id]} folders</span>
+                    </div>
+                  )}
                   <span>Updated {formatRelativeTime(project.updatedAt)}</span>
                 </div>
               </CardContent>
