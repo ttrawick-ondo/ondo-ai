@@ -94,8 +94,8 @@ export default function ProjectDetailPage() {
     }
   }, [project, projectId, setActiveProject])
 
-  const handleNewChat = (folderId?: string) => {
-    const id = createConversation('New conversation', projectId, undefined, folderId || null)
+  const handleNewChat = async (folderId?: string) => {
+    const id = await createConversation('New conversation', projectId, undefined, folderId || null)
     setActiveConversation(id)
     router.push(`/chat/${id}`)
   }

@@ -41,8 +41,8 @@ export function CommandPalette() {
     setCommandPaletteOpen(false)
   }
 
-  const handleNewChat = () => {
-    const id = createConversation()
+  const handleNewChat = async () => {
+    const id = await createConversation()
     setActiveConversation(id)
     router.push(`/chat/${id}`)
   }

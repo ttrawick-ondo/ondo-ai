@@ -9,8 +9,8 @@ export default function ChatPage() {
   const router = useRouter()
   const { createConversation, setActiveConversation } = useChatActions()
 
-  const handleNewChat = () => {
-    const id = createConversation()
+  const handleNewChat = async () => {
+    const id = await createConversation()
     setActiveConversation(id)
     router.push(`/chat/${id}`)
   }

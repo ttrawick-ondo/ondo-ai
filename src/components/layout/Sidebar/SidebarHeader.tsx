@@ -8,8 +8,8 @@ import { useChatActions } from '@/stores'
 export function SidebarHeader() {
   const { createConversation, setActiveConversation } = useChatActions()
 
-  const handleNewChat = () => {
-    const id = createConversation()
+  const handleNewChat = async () => {
+    const id = await createConversation()
     setActiveConversation(id)
   }
 

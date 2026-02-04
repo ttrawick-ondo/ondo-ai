@@ -69,7 +69,7 @@ export default function PromptDetailPage() {
 
   const handleUse = async () => {
     const content = getCompiledPrompt()
-    const id = createConversation(prompt.title)
+    const id = await createConversation(prompt.title)
     setActiveConversation(id)
     incrementUsage(prompt.id)
     router.push(`/chat/${id}`)

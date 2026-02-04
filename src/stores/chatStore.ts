@@ -1,10 +1,11 @@
 import { useMemo } from 'react'
 import { create } from 'zustand'
-import { devtools } from 'zustand/middleware'
+import { devtools, persist } from 'zustand/middleware'
+import { toast } from 'sonner'
 import type { Conversation, Message, SendMessageInput, AIProvider, ToolCall, ToolExecutionRecord } from '@/types'
-import { mockConversations, mockMessages } from '@/lib/mocks/data'
 import { generateId } from '@/lib/utils'
 import { chatClient, type RoutingInfo } from '@/lib/api/client'
+import { conversationApi } from '@/lib/api/client/conversations'
 import { toolRegistry, registerBuiltinTools } from '@/lib/tools'
 import { useRoutingStore } from './routingStore'
 
@@ -18,6 +19,8 @@ interface ChatState {
   isStreaming: boolean
   streamingMessage: string
   isLoading: boolean
+  isSyncing: boolean
+  isInitialized: boolean
   // Tool-related state
   enabledTools: string[]
   isExecutingTools: boolean
@@ -26,261 +29,457 @@ interface ChatState {
 
 interface ChatActions {
   setActiveConversation: (id: string | null) => void
-  createConversation: (title?: string, projectId?: string, modelId?: string, folderId?: string | null) => string
-  deleteConversation: (id: string) => void
-  updateConversationTitle: (id: string, title: string) => void
+  createConversation: (title?: string, projectId?: string, modelId?: string, folderId?: string | null) => Promise<string>
+  deleteConversation: (id: string) => Promise<void>
+  updateConversationTitle: (id: string, title: string) => Promise<void>
   updateConversationModel: (id: string, modelId: string) => void
   sendMessage: (input: SendMessageInput) => Promise<void>
   clearConversation: (id: string) => void
-  loadConversations: () => void
+  loadConversations: (conversations: Conversation[]) => void
+  fetchUserConversations: (userId: string, projectId?: string) => Promise<void>
   // Tool-related actions
   setEnabledTools: (toolNames: string[]) => void
   executeToolCalls: (toolCalls: ToolCall[]) => Promise<ToolExecutionRecord[]>
   // Folder & organization actions
-  moveConversationToFolder: (conversationId: string, folderId: string | null, projectId?: string | null) => void
-  moveConversationToProject: (conversationId: string, projectId: string | null) => void
+  moveConversationToFolder: (conversationId: string, folderId: string | null, projectId?: string | null) => Promise<void>
+  moveConversationToProject: (conversationId: string, projectId: string | null) => Promise<void>
   // Pinning actions
-  toggleConversationPinned: (id: string) => void
+  toggleConversationPinned: (id: string) => Promise<void>
   // Branching actions
-  branchConversation: (sourceId: string, branchPointMessageId: string, title?: string) => string
+  branchConversation: (sourceId: string, branchPointMessageId: string, title?: string) => Promise<string>
   // Search
   searchConversations: (query: string, projectId?: string) => Conversation[]
 }
 
 type ChatStore = ChatState & { actions: ChatActions }
 
-// Convert array to record
-const conversationsRecord = mockConversations.reduce((acc, conv) => {
-  acc[conv.id] = conv
-  return acc
-}, {} as Record<string, Conversation>)
-
 export const useChatStore = create<ChatStore>()(
   devtools(
-    (set, get) => ({
-      conversations: conversationsRecord,
-      activeConversationId: null,
-      messagesByConversation: mockMessages,
-      isStreaming: false,
-      streamingMessage: '',
-      isLoading: false,
-      // Tool-related initial state
-      enabledTools: [],
-      isExecutingTools: false,
-      pendingToolCalls: [],
+    persist(
+      (set, get) => ({
+        conversations: {},
+        activeConversationId: null,
+        messagesByConversation: {},
+        isStreaming: false,
+        streamingMessage: '',
+        isLoading: false,
+        isSyncing: false,
+        isInitialized: false,
+        // Tool-related initial state
+        enabledTools: [],
+        isExecutingTools: false,
+        pendingToolCalls: [],
 
-      actions: {
-        setActiveConversation: (id) => {
-          set({ activeConversationId: id })
-        },
+        actions: {
+          setActiveConversation: (id) => {
+            set({ activeConversationId: id })
+          },
 
-        createConversation: (title = 'New conversation', projectId, modelId, folderId = null) => {
-          const id = `conv-${generateId()}`
-          const now = new Date()
+          createConversation: async (title = 'New conversation', projectId, modelId, folderId = null) => {
+            const tempId = `conv-${generateId()}`
+            const now = new Date()
 
-          const conversation: Conversation = {
-            id,
-            title,
-            projectId,
-            folderId,
-            modelId,
-            userId: 'user-1',
-            messageCount: 0,
-            lastMessageAt: now,
-            createdAt: now,
-            updatedAt: now,
-            pinned: false,
-            archived: false,
-            parentId: null,
-            branchPointId: null,
-          }
-
-          set((state) => ({
-            conversations: { ...state.conversations, [id]: conversation },
-            messagesByConversation: { ...state.messagesByConversation, [id]: [] },
-            activeConversationId: id,
-          }))
-
-          return id
-        },
-
-        deleteConversation: (id) => {
-          set((state) => {
-            const { [id]: _, ...conversations } = state.conversations
-            const { [id]: __, ...messagesByConversation } = state.messagesByConversation
-
-            return {
-              conversations,
-              messagesByConversation,
-              activeConversationId:
-                state.activeConversationId === id ? null : state.activeConversationId,
+            const conversation: Conversation = {
+              id: tempId,
+              title,
+              projectId,
+              folderId,
+              modelId,
+              userId: 'user-1',
+              messageCount: 0,
+              lastMessageAt: now,
+              createdAt: now,
+              updatedAt: now,
+              pinned: false,
+              archived: false,
+              parentId: null,
+              branchPointId: null,
             }
-          })
-        },
 
-        updateConversationTitle: (id, title) => {
-          set((state) => ({
-            conversations: {
-              ...state.conversations,
-              [id]: { ...state.conversations[id], title, updatedAt: new Date() },
-            },
-          }))
-        },
-
-        updateConversationModel: (id, modelId) => {
-          set((state) => ({
-            conversations: {
-              ...state.conversations,
-              [id]: { ...state.conversations[id], modelId, updatedAt: new Date() },
-            },
-          }))
-        },
-
-        sendMessage: async (input) => {
-          const { activeConversationId, conversations, messagesByConversation, enabledTools, actions } = get()
-          if (!activeConversationId) return
-
-          const conversation = conversations[activeConversationId]
-          const modelId = input.modelId || conversation.modelId || 'claude-sonnet-4-20250514'
-
-          const userMessageId = `msg-${generateId()}`
-          const now = new Date()
-
-          // Add user message
-          const userMessage: Message = {
-            id: userMessageId,
-            conversationId: activeConversationId,
-            role: 'user',
-            content: input.content,
-            attachments: input.attachments?.map((a) => ({ ...a, id: generateId() })),
-            createdAt: now,
-          }
-
-          set((state) => ({
-            messagesByConversation: {
-              ...state.messagesByConversation,
-              [activeConversationId]: [
-                ...(state.messagesByConversation[activeConversationId] || []),
-                userMessage,
-              ],
-            },
-            conversations: {
-              ...state.conversations,
-              [activeConversationId]: {
-                ...state.conversations[activeConversationId],
-                messageCount: state.conversations[activeConversationId].messageCount + 1,
-                lastMessageAt: now,
-                updatedAt: now,
-                title:
-                  state.conversations[activeConversationId].messageCount === 0
-                    ? input.content.slice(0, 50) + (input.content.length > 50 ? '...' : '')
-                    : state.conversations[activeConversationId].title,
-              },
-            },
-          }))
-
-          // Start streaming
-          set({ isStreaming: true, streamingMessage: '' })
-
-          // Get conversation messages for API
-          const existingMessages = messagesByConversation[activeConversationId] || []
-
-          // Build messages including tool call/response messages, images, and files
-          const buildApiMessages = (messages: Message[]) => {
-            return messages.map((msg) => {
-              // Extract image attachments
-              const images = msg.attachments?.filter((a) => a.type === 'image') as import('@/types').ImageAttachment[] | undefined
-              // Extract file attachments
-              const files = msg.attachments?.filter((a) => a.type === 'file') as import('@/types').FileAttachment[] | undefined
-
-              return {
-                role: msg.role,
-                content: msg.content,
-                ...(msg.tool_calls && { tool_calls: msg.tool_calls }),
-                ...(msg.tool_call_id && { tool_call_id: msg.tool_call_id }),
-                ...(images && images.length > 0 && { images }),
-                ...(files && files.length > 0 && { files }),
-              }
-            })
-          }
-
-          let apiMessages = buildApiMessages([...existingMessages, userMessage])
-
-          // Determine provider from model ID
-          let provider: AIProvider = 'anthropic'
-          if (modelId.startsWith('gpt-')) provider = 'openai'
-          else if (modelId.startsWith('glean-')) provider = 'glean'
-          else if (modelId.startsWith('dust-')) provider = 'dust'
-          else if (modelId.startsWith('ondobot-')) provider = 'ondobot'
-
-          // Determine which tools to use
-          const toolsToUse = input.tools || enabledTools
-          const toolsConfig = toolsToUse.length > 0 ? toolRegistry.toAPIFormat(toolsToUse) : undefined
-
-          // Get routing options from the routing store
-          const routingState = useRoutingStore.getState()
-          const routingOptions = routingState.actions.getRoutingOptions()
-
-          // Recursive function to handle tool calls
-          const processResponse = async () => {
-            const aiMessageId = `msg-${generateId()}`
-            let fullResponse = ''
-            let receivedToolCalls: ToolCall[] = []
-            let routingInfo: RoutingInfo | undefined
+            // Optimistic update
+            set((state) => ({
+              conversations: { ...state.conversations, [tempId]: conversation },
+              messagesByConversation: { ...state.messagesByConversation, [tempId]: [] },
+              activeConversationId: tempId,
+              isSyncing: true,
+            }))
 
             try {
-              await chatClient.stream(
-                {
-                  conversationId: activeConversationId,
-                  messages: apiMessages,
-                  provider,
-                  model: modelId,
-                  options: {
-                    tools: toolsConfig,
-                    tool_choice: input.tool_choice,
-                  },
+              // Call API
+              const created = await conversationApi.createConversation({
+                userId: 'user-1',
+                projectId: projectId || undefined,
+                folderId,
+                title,
+                model: modelId || 'claude-sonnet-4-20250514',
+                provider: 'anthropic',
+              })
+
+              // Replace temp with real - API client already maps to correct Conversation type
+              set((state) => {
+                const { [tempId]: _, ...restConvs } = state.conversations
+                const { [tempId]: __, ...restMsgs } = state.messagesByConversation
+
+                return {
+                  conversations: { ...restConvs, [created.id]: created },
+                  messagesByConversation: { ...restMsgs, [created.id]: [] },
+                  activeConversationId: created.id,
+                  isSyncing: false,
+                }
+              })
+
+              return created.id
+            } catch (error) {
+              // Rollback
+              set((state) => {
+                const { [tempId]: _, ...restConvs } = state.conversations
+                const { [tempId]: __, ...restMsgs } = state.messagesByConversation
+                return {
+                  conversations: restConvs,
+                  messagesByConversation: restMsgs,
+                  activeConversationId: null,
+                  isSyncing: false,
+                }
+              })
+
+              const message = error instanceof Error ? error.message : 'Failed to create conversation'
+              toast.error(message)
+              throw error
+            }
+          },
+
+          deleteConversation: async (id) => {
+            const existing = get().conversations[id]
+            const existingMessages = get().messagesByConversation[id]
+            if (!existing) return
+
+            // Optimistic delete
+            set((state) => {
+              const { [id]: _, ...conversations } = state.conversations
+              const { [id]: __, ...messagesByConversation } = state.messagesByConversation
+
+              return {
+                conversations,
+                messagesByConversation,
+                activeConversationId:
+                  state.activeConversationId === id ? null : state.activeConversationId,
+                isSyncing: true,
+              }
+            })
+
+            try {
+              await conversationApi.deleteConversation(id)
+              set({ isSyncing: false })
+            } catch (error) {
+              // Rollback
+              set((state) => ({
+                conversations: { ...state.conversations, [id]: existing },
+                messagesByConversation: { ...state.messagesByConversation, [id]: existingMessages || [] },
+                isSyncing: false,
+              }))
+
+              const message = error instanceof Error ? error.message : 'Failed to delete conversation'
+              toast.error(message)
+              throw error
+            }
+          },
+
+          updateConversationTitle: async (id, title) => {
+            const existing = get().conversations[id]
+            if (!existing) return
+
+            // Optimistic update
+            set((state) => ({
+              conversations: {
+                ...state.conversations,
+                [id]: { ...state.conversations[id], title, updatedAt: new Date() },
+              },
+              isSyncing: true,
+            }))
+
+            try {
+              await conversationApi.updateConversation(id, { title })
+              set({ isSyncing: false })
+            } catch (error) {
+              // Rollback
+              set((state) => ({
+                conversations: { ...state.conversations, [id]: existing },
+                isSyncing: false,
+              }))
+
+              const message = error instanceof Error ? error.message : 'Failed to update title'
+              toast.error(message)
+              throw error
+            }
+          },
+
+          updateConversationModel: (id, modelId) => {
+            set((state) => ({
+              conversations: {
+                ...state.conversations,
+                [id]: { ...state.conversations[id], modelId, updatedAt: new Date() },
+              },
+            }))
+          },
+
+          sendMessage: async (input) => {
+            const { activeConversationId, conversations, messagesByConversation, enabledTools, actions } = get()
+            if (!activeConversationId) return
+
+            const conversation = conversations[activeConversationId]
+            const modelId = input.modelId || conversation.modelId || 'claude-sonnet-4-20250514'
+
+            const userMessageId = `msg-${generateId()}`
+            const now = new Date()
+
+            // Add user message
+            const userMessage: Message = {
+              id: userMessageId,
+              conversationId: activeConversationId,
+              role: 'user',
+              content: input.content,
+              attachments: input.attachments?.map((a) => ({ ...a, id: generateId() })),
+              createdAt: now,
+            }
+
+            set((state) => ({
+              messagesByConversation: {
+                ...state.messagesByConversation,
+                [activeConversationId]: [
+                  ...(state.messagesByConversation[activeConversationId] || []),
+                  userMessage,
+                ],
+              },
+              conversations: {
+                ...state.conversations,
+                [activeConversationId]: {
+                  ...state.conversations[activeConversationId],
+                  messageCount: state.conversations[activeConversationId].messageCount + 1,
+                  lastMessageAt: now,
+                  updatedAt: now,
+                  title:
+                    state.conversations[activeConversationId].messageCount === 0
+                      ? input.content.slice(0, 50) + (input.content.length > 50 ? '...' : '')
+                      : state.conversations[activeConversationId].title,
                 },
-                {
-                  onStart: () => {
-                    set({ streamingMessage: '' })
-                  },
-                  onDelta: (delta) => {
-                    fullResponse += delta
-                    set({ streamingMessage: fullResponse })
-                  },
-                  onRoutingInfo: (info) => {
-                    routingInfo = info
-                    // Update the routing store with the last routing info
-                    useRoutingStore.getState().actions.setLastRouteInfo({
-                      intent: info.intent,
-                      confidence: info.confidence,
-                      provider: provider,
-                      wasAutoRouted: info.wasAutoRouted,
-                    })
-                  },
-                  onDone: async (response) => {
-                    // Check if response contains tool calls
-                    if (response.message.tool_calls && response.message.tool_calls.length > 0) {
-                      receivedToolCalls = response.message.tool_calls
+              },
+            }))
 
-                      // Add assistant message with tool calls
-                      const assistantMessage: Message = {
+            // Start streaming
+            set({ isStreaming: true, streamingMessage: '' })
+
+            // Get conversation messages for API
+            const existingMessages = messagesByConversation[activeConversationId] || []
+
+            // Build messages including tool call/response messages, images, and files
+            const buildApiMessages = (messages: Message[]) => {
+              return messages.map((msg) => {
+                // Extract image attachments
+                const images = msg.attachments?.filter((a) => a.type === 'image') as import('@/types').ImageAttachment[] | undefined
+                // Extract file attachments
+                const files = msg.attachments?.filter((a) => a.type === 'file') as import('@/types').FileAttachment[] | undefined
+
+                return {
+                  role: msg.role,
+                  content: msg.content,
+                  ...(msg.tool_calls && { tool_calls: msg.tool_calls }),
+                  ...(msg.tool_call_id && { tool_call_id: msg.tool_call_id }),
+                  ...(images && images.length > 0 && { images }),
+                  ...(files && files.length > 0 && { files }),
+                }
+              })
+            }
+
+            let apiMessages = buildApiMessages([...existingMessages, userMessage])
+
+            // Determine provider from model ID
+            let provider: AIProvider = 'anthropic'
+            if (modelId.startsWith('gpt-')) provider = 'openai'
+            else if (modelId.startsWith('glean-')) provider = 'glean'
+            else if (modelId.startsWith('dust-')) provider = 'dust'
+            else if (modelId.startsWith('ondobot-')) provider = 'ondobot'
+
+            // Determine which tools to use
+            const toolsToUse = input.tools || enabledTools
+            const toolsConfig = toolsToUse.length > 0 ? toolRegistry.toAPIFormat(toolsToUse) : undefined
+
+            // Get routing options from the routing store
+            const routingState = useRoutingStore.getState()
+            const routingOptions = routingState.actions.getRoutingOptions()
+
+            // Recursive function to handle tool calls
+            const processResponse = async () => {
+              const aiMessageId = `msg-${generateId()}`
+              let fullResponse = ''
+              let receivedToolCalls: ToolCall[] = []
+              let routingInfo: RoutingInfo | undefined
+
+              try {
+                await chatClient.stream(
+                  {
+                    conversationId: activeConversationId,
+                    messages: apiMessages,
+                    provider,
+                    model: modelId,
+                    options: {
+                      tools: toolsConfig,
+                      tool_choice: input.tool_choice,
+                    },
+                  },
+                  {
+                    onStart: () => {
+                      set({ streamingMessage: '' })
+                    },
+                    onDelta: (delta) => {
+                      fullResponse += delta
+                      set({ streamingMessage: fullResponse })
+                    },
+                    onRoutingInfo: (info) => {
+                      routingInfo = info
+                      // Update the routing store with the last routing info
+                      useRoutingStore.getState().actions.setLastRouteInfo({
+                        intent: info.intent,
+                        confidence: info.confidence,
+                        provider: provider,
+                        wasAutoRouted: info.wasAutoRouted,
+                      })
+                    },
+                    onDone: async (response) => {
+                      // Check if response contains tool calls
+                      if (response.message.tool_calls && response.message.tool_calls.length > 0) {
+                        receivedToolCalls = response.message.tool_calls
+
+                        // Add assistant message with tool calls
+                        const assistantMessage: Message = {
+                          id: aiMessageId,
+                          conversationId: activeConversationId,
+                          role: 'assistant',
+                          content: response.message.content || '',
+                          tool_calls: receivedToolCalls,
+                          metadata: {
+                            model: response.metadata.model,
+                            tokenCount: response.usage.totalTokens,
+                            processingTimeMs: response.metadata.processingTimeMs,
+                            routing: routingInfo ? {
+                              intent: routingInfo.intent,
+                              confidence: routingInfo.confidence,
+                              wasAutoRouted: routingInfo.wasAutoRouted,
+                              routedBy: routingInfo.routedBy,
+                            } : undefined,
+                          },
+                          createdAt: new Date(),
+                        }
+
+                        set((state) => ({
+                          messagesByConversation: {
+                            ...state.messagesByConversation,
+                            [activeConversationId]: [
+                              ...(state.messagesByConversation[activeConversationId] || []),
+                              assistantMessage,
+                            ],
+                          },
+                          conversations: {
+                            ...state.conversations,
+                            [activeConversationId]: {
+                              ...state.conversations[activeConversationId],
+                              messageCount: state.conversations[activeConversationId].messageCount + 1,
+                              lastMessageAt: new Date(),
+                              updatedAt: new Date(),
+                            },
+                          },
+                        }))
+
+                        // Execute tool calls
+                        const toolResults = await actions.executeToolCalls(receivedToolCalls)
+
+                        // Add tool response messages
+                        const toolMessages: Message[] = toolResults.map((result) => ({
+                          id: `msg-${generateId()}`,
+                          conversationId: activeConversationId,
+                          role: 'tool' as const,
+                          content: result.result.success ? result.result.output : (result.result.error || 'Tool execution failed'),
+                          tool_call_id: result.id,
+                          tool_executions: [result],
+                          createdAt: new Date(),
+                        }))
+
+                        set((state) => ({
+                          messagesByConversation: {
+                            ...state.messagesByConversation,
+                            [activeConversationId]: [
+                              ...(state.messagesByConversation[activeConversationId] || []),
+                              ...toolMessages,
+                            ],
+                          },
+                          conversations: {
+                            ...state.conversations,
+                            [activeConversationId]: {
+                              ...state.conversations[activeConversationId],
+                              messageCount: state.conversations[activeConversationId].messageCount + toolMessages.length,
+                              lastMessageAt: new Date(),
+                              updatedAt: new Date(),
+                            },
+                          },
+                        }))
+
+                        // Update apiMessages with new messages and continue conversation
+                        const updatedMessages = get().messagesByConversation[activeConversationId] || []
+                        apiMessages = buildApiMessages(updatedMessages)
+
+                        // Recursively process next response (to handle multi-turn tool use)
+                        await processResponse()
+                      } else {
+                        // No tool calls, add final assistant message
+                        const aiMessage: Message = {
+                          id: aiMessageId,
+                          conversationId: activeConversationId,
+                          role: 'assistant',
+                          content: response.message.content || fullResponse,
+                          metadata: {
+                            model: response.metadata.model,
+                            tokenCount: response.usage.totalTokens,
+                            processingTimeMs: response.metadata.processingTimeMs,
+                            routing: routingInfo ? {
+                              intent: routingInfo.intent,
+                              confidence: routingInfo.confidence,
+                              wasAutoRouted: routingInfo.wasAutoRouted,
+                              routedBy: routingInfo.routedBy,
+                            } : undefined,
+                          },
+                          createdAt: new Date(),
+                        }
+
+                        set((state) => ({
+                          messagesByConversation: {
+                            ...state.messagesByConversation,
+                            [activeConversationId]: [
+                              ...(state.messagesByConversation[activeConversationId] || []),
+                              aiMessage,
+                            ],
+                          },
+                          conversations: {
+                            ...state.conversations,
+                            [activeConversationId]: {
+                              ...state.conversations[activeConversationId],
+                              messageCount: state.conversations[activeConversationId].messageCount + 1,
+                              lastMessageAt: new Date(),
+                              updatedAt: new Date(),
+                            },
+                          },
+                          isStreaming: false,
+                          streamingMessage: '',
+                        }))
+                      }
+                    },
+                    onError: (error) => {
+                      console.error('Chat error:', error)
+
+                      // Add error message
+                      const errorMessage: Message = {
                         id: aiMessageId,
                         conversationId: activeConversationId,
                         role: 'assistant',
-                        content: response.message.content || '',
-                        tool_calls: receivedToolCalls,
-                        metadata: {
-                          model: response.metadata.model,
-                          tokenCount: response.usage.totalTokens,
-                          processingTimeMs: response.metadata.processingTimeMs,
-                          routing: routingInfo ? {
-                            intent: routingInfo.intent,
-                            confidence: routingInfo.confidence,
-                            wasAutoRouted: routingInfo.wasAutoRouted,
-                            routedBy: routingInfo.routedBy,
-                          } : undefined,
-                        },
+                        content: `Sorry, there was an error processing your request: ${error}`,
                         createdAt: new Date(),
                       }
 
@@ -289,319 +488,333 @@ export const useChatStore = create<ChatStore>()(
                           ...state.messagesByConversation,
                           [activeConversationId]: [
                             ...(state.messagesByConversation[activeConversationId] || []),
-                            assistantMessage,
+                            errorMessage,
                           ],
-                        },
-                        conversations: {
-                          ...state.conversations,
-                          [activeConversationId]: {
-                            ...state.conversations[activeConversationId],
-                            messageCount: state.conversations[activeConversationId].messageCount + 1,
-                            lastMessageAt: new Date(),
-                            updatedAt: new Date(),
-                          },
-                        },
-                      }))
-
-                      // Execute tool calls
-                      const toolResults = await actions.executeToolCalls(receivedToolCalls)
-
-                      // Add tool response messages
-                      const toolMessages: Message[] = toolResults.map((result) => ({
-                        id: `msg-${generateId()}`,
-                        conversationId: activeConversationId,
-                        role: 'tool' as const,
-                        content: result.result.success ? result.result.output : (result.result.error || 'Tool execution failed'),
-                        tool_call_id: result.id,
-                        tool_executions: [result],
-                        createdAt: new Date(),
-                      }))
-
-                      set((state) => ({
-                        messagesByConversation: {
-                          ...state.messagesByConversation,
-                          [activeConversationId]: [
-                            ...(state.messagesByConversation[activeConversationId] || []),
-                            ...toolMessages,
-                          ],
-                        },
-                        conversations: {
-                          ...state.conversations,
-                          [activeConversationId]: {
-                            ...state.conversations[activeConversationId],
-                            messageCount: state.conversations[activeConversationId].messageCount + toolMessages.length,
-                            lastMessageAt: new Date(),
-                            updatedAt: new Date(),
-                          },
-                        },
-                      }))
-
-                      // Update apiMessages with new messages and continue conversation
-                      const updatedMessages = get().messagesByConversation[activeConversationId] || []
-                      apiMessages = buildApiMessages(updatedMessages)
-
-                      // Recursively process next response (to handle multi-turn tool use)
-                      await processResponse()
-                    } else {
-                      // No tool calls, add final assistant message
-                      const aiMessage: Message = {
-                        id: aiMessageId,
-                        conversationId: activeConversationId,
-                        role: 'assistant',
-                        content: response.message.content || fullResponse,
-                        metadata: {
-                          model: response.metadata.model,
-                          tokenCount: response.usage.totalTokens,
-                          processingTimeMs: response.metadata.processingTimeMs,
-                          routing: routingInfo ? {
-                            intent: routingInfo.intent,
-                            confidence: routingInfo.confidence,
-                            wasAutoRouted: routingInfo.wasAutoRouted,
-                            routedBy: routingInfo.routedBy,
-                          } : undefined,
-                        },
-                        createdAt: new Date(),
-                      }
-
-                      set((state) => ({
-                        messagesByConversation: {
-                          ...state.messagesByConversation,
-                          [activeConversationId]: [
-                            ...(state.messagesByConversation[activeConversationId] || []),
-                            aiMessage,
-                          ],
-                        },
-                        conversations: {
-                          ...state.conversations,
-                          [activeConversationId]: {
-                            ...state.conversations[activeConversationId],
-                            messageCount: state.conversations[activeConversationId].messageCount + 1,
-                            lastMessageAt: new Date(),
-                            updatedAt: new Date(),
-                          },
                         },
                         isStreaming: false,
                         streamingMessage: '',
                       }))
-                    }
+                    },
                   },
-                  onError: (error) => {
-                    console.error('Chat error:', error)
-
-                    // Add error message
-                    const errorMessage: Message = {
-                      id: aiMessageId,
-                      conversationId: activeConversationId,
-                      role: 'assistant',
-                      content: `Sorry, there was an error processing your request: ${error}`,
-                      createdAt: new Date(),
-                    }
-
-                    set((state) => ({
-                      messagesByConversation: {
-                        ...state.messagesByConversation,
-                        [activeConversationId]: [
-                          ...(state.messagesByConversation[activeConversationId] || []),
-                          errorMessage,
-                        ],
-                      },
-                      isStreaming: false,
-                      streamingMessage: '',
-                    }))
-                  },
-                },
-                {}, // StreamOptions (use defaults)
-                routingOptions
-              )
-            } catch (error) {
-              console.error('Chat error:', error)
-              set({ isStreaming: false, streamingMessage: '' })
+                  {}, // StreamOptions (use defaults)
+                  routingOptions
+                )
+              } catch (error) {
+                console.error('Chat error:', error)
+                set({ isStreaming: false, streamingMessage: '' })
+              }
             }
-          }
 
-          await processResponse()
-        },
+            await processResponse()
+          },
 
-        clearConversation: (id) => {
-          set((state) => ({
-            messagesByConversation: {
-              ...state.messagesByConversation,
-              [id]: [],
-            },
-            conversations: {
-              ...state.conversations,
-              [id]: {
-                ...state.conversations[id],
-                messageCount: 0,
-                updatedAt: new Date(),
+          clearConversation: (id) => {
+            set((state) => ({
+              messagesByConversation: {
+                ...state.messagesByConversation,
+                [id]: [],
               },
-            },
-          }))
-        },
-
-        loadConversations: () => {
-          set({ isLoading: true })
-          // Simulate API call
-          setTimeout(() => {
-            set({ isLoading: false })
-          }, 500)
-        },
-
-        setEnabledTools: (toolNames: string[]) => {
-          set({ enabledTools: toolNames })
-        },
-
-        executeToolCalls: async (toolCalls: ToolCall[]) => {
-          set({ isExecutingTools: true, pendingToolCalls: toolCalls })
-
-          const parsedCalls = toolCalls.map((tc) => ({
-            id: tc.id,
-            name: tc.function.name,
-            arguments: JSON.parse(tc.function.arguments),
-          }))
-
-          const results = await toolRegistry.executeToolCalls(parsedCalls, { parallel: true })
-
-          set({ isExecutingTools: false, pendingToolCalls: [] })
-          return results
-        },
-
-        moveConversationToFolder: (conversationId, folderId, projectId) => {
-          set((state) => {
-            const conversation = state.conversations[conversationId]
-            if (!conversation) return state
-
-            return {
               conversations: {
                 ...state.conversations,
-                [conversationId]: {
-                  ...conversation,
-                  folderId,
-                  projectId: projectId !== undefined ? projectId : conversation.projectId,
+                [id]: {
+                  ...state.conversations[id],
+                  messageCount: 0,
                   updatedAt: new Date(),
                 },
               },
+            }))
+          },
+
+          loadConversations: (conversations) => {
+            const conversationsRecord = conversations.reduce((acc, conv) => {
+              acc[conv.id] = conv
+              return acc
+            }, {} as Record<string, Conversation>)
+
+            set({ conversations: conversationsRecord, isInitialized: true })
+          },
+
+          fetchUserConversations: async (userId, projectId) => {
+            set({ isLoading: true })
+            try {
+              // API client already maps to Conversation type with modelId
+              const conversations = await conversationApi.getUserConversations(userId, {
+                projectId,
+              })
+
+              get().actions.loadConversations(conversations)
+            } catch (error) {
+              const message = error instanceof Error ? error.message : 'Failed to load conversations'
+              toast.error(message)
+            } finally {
+              set({ isLoading: false })
             }
-          })
-        },
+          },
 
-        moveConversationToProject: (conversationId, projectId) => {
-          set((state) => {
-            const conversation = state.conversations[conversationId]
-            if (!conversation) return state
+          setEnabledTools: (toolNames: string[]) => {
+            set({ enabledTools: toolNames })
+          },
 
-            return {
+          executeToolCalls: async (toolCalls: ToolCall[]) => {
+            set({ isExecutingTools: true, pendingToolCalls: toolCalls })
+
+            const parsedCalls = toolCalls.map((tc) => ({
+              id: tc.id,
+              name: tc.function.name,
+              arguments: JSON.parse(tc.function.arguments),
+            }))
+
+            const results = await toolRegistry.executeToolCalls(parsedCalls, { parallel: true })
+
+            set({ isExecutingTools: false, pendingToolCalls: [] })
+            return results
+          },
+
+          moveConversationToFolder: async (conversationId, folderId, projectId) => {
+            const existing = get().conversations[conversationId]
+            if (!existing) return
+
+            // Optimistic update
+            set((state) => ({
               conversations: {
                 ...state.conversations,
                 [conversationId]: {
-                  ...conversation,
+                  ...existing,
+                  folderId,
+                  projectId: projectId !== undefined ? projectId : existing.projectId,
+                  updatedAt: new Date(),
+                },
+              },
+              isSyncing: true,
+            }))
+
+            try {
+              await conversationApi.updateConversation(conversationId, {
+                folderId,
+                projectId: projectId !== undefined ? projectId : undefined,
+              })
+              set({ isSyncing: false })
+            } catch (error) {
+              // Rollback
+              set((state) => ({
+                conversations: { ...state.conversations, [conversationId]: existing },
+                isSyncing: false,
+              }))
+
+              const message = error instanceof Error ? error.message : 'Failed to move conversation'
+              toast.error(message)
+              throw error
+            }
+          },
+
+          moveConversationToProject: async (conversationId, projectId) => {
+            const existing = get().conversations[conversationId]
+            if (!existing) return
+
+            // Optimistic update
+            set((state) => ({
+              conversations: {
+                ...state.conversations,
+                [conversationId]: {
+                  ...existing,
                   projectId,
                   folderId: null, // Remove from folder when moving to different project
                   updatedAt: new Date(),
                 },
               },
+              isSyncing: true,
+            }))
+
+            try {
+              await conversationApi.updateConversation(conversationId, {
+                projectId,
+                folderId: null,
+              })
+              set({ isSyncing: false })
+            } catch (error) {
+              // Rollback
+              set((state) => ({
+                conversations: { ...state.conversations, [conversationId]: existing },
+                isSyncing: false,
+              }))
+
+              const message = error instanceof Error ? error.message : 'Failed to move conversation'
+              toast.error(message)
+              throw error
             }
-          })
-        },
+          },
 
-        toggleConversationPinned: (id) => {
-          set((state) => {
-            const conversation = state.conversations[id]
-            if (!conversation) return state
+          toggleConversationPinned: async (id) => {
+            const existing = get().conversations[id]
+            if (!existing) return
 
-            return {
+            // Optimistic update
+            set((state) => ({
               conversations: {
                 ...state.conversations,
                 [id]: {
-                  ...conversation,
-                  pinned: !conversation.pinned,
+                  ...existing,
+                  pinned: !existing.pinned,
                   updatedAt: new Date(),
                 },
               },
+              isSyncing: true,
+            }))
+
+            try {
+              await conversationApi.togglePin(id)
+              set({ isSyncing: false })
+            } catch (error) {
+              // Rollback
+              set((state) => ({
+                conversations: { ...state.conversations, [id]: existing },
+                isSyncing: false,
+              }))
+
+              const message = error instanceof Error ? error.message : 'Failed to toggle pin'
+              toast.error(message)
+              throw error
             }
-          })
-        },
+          },
 
-        branchConversation: (sourceId, branchPointMessageId, title) => {
-          const state = get()
-          const sourceConversation = state.conversations[sourceId]
-          const sourceMessages = state.messagesByConversation[sourceId] || []
+          branchConversation: async (sourceId, branchPointMessageId, title) => {
+            const state = get()
+            const sourceConversation = state.conversations[sourceId]
+            const sourceMessages = state.messagesByConversation[sourceId] || []
 
-          if (!sourceConversation) {
-            throw new Error(`Source conversation ${sourceId} not found`)
-          }
-
-          // Find the branch point message index
-          const branchPointIndex = sourceMessages.findIndex(
-            (m) => m.id === branchPointMessageId
-          )
-          if (branchPointIndex === -1) {
-            throw new Error(`Branch point message ${branchPointMessageId} not found`)
-          }
-
-          // Create new conversation
-          const id = `conv-${generateId()}`
-          const now = new Date()
-          const branchTitle = title || `Branch of ${sourceConversation.title}`
-
-          // Copy messages up to and including the branch point
-          const copiedMessages = sourceMessages.slice(0, branchPointIndex + 1).map((msg) => ({
-            ...msg,
-            id: `msg-${generateId()}`,
-            conversationId: id,
-            createdAt: new Date(msg.createdAt),
-          }))
-
-          const newConversation: Conversation = {
-            id,
-            title: branchTitle,
-            projectId: sourceConversation.projectId,
-            folderId: sourceConversation.folderId,
-            modelId: sourceConversation.modelId,
-            userId: sourceConversation.userId,
-            messageCount: copiedMessages.length,
-            lastMessageAt: now,
-            createdAt: now,
-            updatedAt: now,
-            pinned: false,
-            archived: false,
-            parentId: sourceId,
-            branchPointId: branchPointMessageId,
-          }
-
-          set((state) => ({
-            conversations: { ...state.conversations, [id]: newConversation },
-            messagesByConversation: { ...state.messagesByConversation, [id]: copiedMessages },
-            activeConversationId: id,
-          }))
-
-          return id
-        },
-
-        searchConversations: (query, projectId) => {
-          const state = get()
-          const lowercaseQuery = query.toLowerCase()
-
-          return Object.values(state.conversations).filter((conv) => {
-            // Filter by project if specified
-            if (projectId !== undefined && conv.projectId !== projectId) {
-              return false
+            if (!sourceConversation) {
+              throw new Error(`Source conversation ${sourceId} not found`)
             }
 
-            // Search in title
-            if (conv.title.toLowerCase().includes(lowercaseQuery)) {
-              return true
-            }
-
-            // Search in messages
-            const messages = state.messagesByConversation[conv.id] || []
-            return messages.some((msg) =>
-              msg.content.toLowerCase().includes(lowercaseQuery)
+            // Find the branch point message index
+            const branchPointIndex = sourceMessages.findIndex(
+              (m) => m.id === branchPointMessageId
             )
-          })
+            if (branchPointIndex === -1) {
+              throw new Error(`Branch point message ${branchPointMessageId} not found`)
+            }
+
+            // Create temp ID for optimistic update
+            const tempId = `conv-${generateId()}`
+            const now = new Date()
+            const branchTitle = title || `Branch of ${sourceConversation.title}`
+
+            // Copy messages up to and including the branch point
+            const copiedMessages = sourceMessages.slice(0, branchPointIndex + 1).map((msg) => ({
+              ...msg,
+              id: `msg-${generateId()}`,
+              conversationId: tempId,
+              createdAt: new Date(msg.createdAt),
+            }))
+
+            const tempConversation: Conversation = {
+              id: tempId,
+              title: branchTitle,
+              projectId: sourceConversation.projectId,
+              folderId: sourceConversation.folderId,
+              modelId: sourceConversation.modelId,
+              userId: sourceConversation.userId,
+              messageCount: copiedMessages.length,
+              lastMessageAt: now,
+              createdAt: now,
+              updatedAt: now,
+              pinned: false,
+              archived: false,
+              parentId: sourceId,
+              branchPointId: branchPointMessageId,
+            }
+
+            // Optimistic update
+            set((state) => ({
+              conversations: { ...state.conversations, [tempId]: tempConversation },
+              messagesByConversation: { ...state.messagesByConversation, [tempId]: copiedMessages },
+              activeConversationId: tempId,
+              isSyncing: true,
+            }))
+
+            try {
+              // Call API - returns Conversation with modelId already mapped
+              const branch = await conversationApi.branchConversation(
+                sourceId,
+                branchPointMessageId,
+                title
+              )
+
+              // Replace temp with real
+              set((state) => {
+                const { [tempId]: _, ...restConvs } = state.conversations
+                const { [tempId]: __, ...restMsgs } = state.messagesByConversation
+
+                // Update message IDs to use new conversation ID
+                const newMessages = copiedMessages.map((msg) => ({
+                  ...msg,
+                  conversationId: branch.id,
+                }))
+
+                return {
+                  conversations: {
+                    ...restConvs,
+                    [branch.id]: { ...branch, messageCount: copiedMessages.length },
+                  },
+                  messagesByConversation: { ...restMsgs, [branch.id]: newMessages },
+                  activeConversationId: branch.id,
+                  isSyncing: false,
+                }
+              })
+
+              return branch.id
+            } catch (error) {
+              // Rollback
+              set((state) => {
+                const { [tempId]: _, ...restConvs } = state.conversations
+                const { [tempId]: __, ...restMsgs } = state.messagesByConversation
+                return {
+                  conversations: restConvs,
+                  messagesByConversation: restMsgs,
+                  activeConversationId: sourceId,
+                  isSyncing: false,
+                }
+              })
+
+              const message = error instanceof Error ? error.message : 'Failed to branch conversation'
+              toast.error(message)
+              throw error
+            }
+          },
+
+          searchConversations: (query, projectId) => {
+            const state = get()
+            const lowercaseQuery = query.toLowerCase()
+
+            return Object.values(state.conversations).filter((conv) => {
+              // Filter by project if specified
+              if (projectId !== undefined && conv.projectId !== projectId) {
+                return false
+              }
+
+              // Search in title
+              if (conv.title.toLowerCase().includes(lowercaseQuery)) {
+                return true
+              }
+
+              // Search in messages
+              const messages = state.messagesByConversation[conv.id] || []
+              return messages.some((msg) =>
+                msg.content.toLowerCase().includes(lowercaseQuery)
+              )
+            })
+          },
         },
-      },
-    }),
+      }),
+      {
+        name: 'chat-store',
+        partialize: (state) => ({
+          // Only persist activeConversationId, not conversations (they come from DB)
+          activeConversationId: state.activeConversationId,
+          enabledTools: state.enabledTools,
+        }),
+      }
+    ),
     { name: 'chat-store' }
   )
 )
@@ -630,6 +843,18 @@ export const useEnabledTools = () => useChatStore((state) => state.enabledTools)
 export const useIsExecutingTools = () => useChatStore((state) => state.isExecutingTools)
 
 export const usePendingToolCalls = () => useChatStore((state) => state.pendingToolCalls)
+
+export const useChatLoading = (): boolean => {
+  return useChatStore((state) => state.isLoading)
+}
+
+export const useChatSyncing = (): boolean => {
+  return useChatStore((state) => state.isSyncing)
+}
+
+export const useConversationsInitialized = (): boolean => {
+  return useChatStore((state) => state.isInitialized)
+}
 
 // Return actions directly from store - they're stable references
 export const useChatActions = () => useChatStore.getState().actions

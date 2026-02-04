@@ -1,31 +1,41 @@
 import { useMemo } from 'react'
 import { create } from 'zustand'
 import { devtools, persist } from 'zustand/middleware'
+import { toast } from 'sonner'
 import type { Folder, FolderTreeNode } from '@/types'
 import { generateId } from '@/lib/utils'
+import { folderApi } from '@/lib/api/client/folders'
 
 interface FolderState {
   folders: Record<string, Folder>
   expandedFolders: Set<string>
   isLoading: boolean
+  isSyncing: boolean
 }
 
 interface FolderActions {
+  // CRUD operations (optimistic + API sync)
   createFolder: (input: {
     projectId: string
     parentId?: string | null
     name: string
     color?: string | null
     icon?: string | null
-  }) => Folder
-  updateFolder: (id: string, data: Partial<Folder>) => void
-  deleteFolder: (id: string) => void
-  moveFolder: (folderId: string, targetParentId: string | null, targetPosition?: number) => void
+  }) => Promise<Folder>
+  updateFolder: (id: string, data: Partial<Folder>) => Promise<void>
+  deleteFolder: (id: string) => Promise<void>
+  moveFolder: (folderId: string, targetParentId: string | null, targetPosition?: number) => Promise<void>
+
+  // UI state (local only)
   toggleFolderExpanded: (id: string) => void
   setFolderExpanded: (id: string, expanded: boolean) => void
   expandAllFolders: (projectId: string) => void
   collapseAllFolders: (projectId: string) => void
+
+  // Data loading
   loadFolders: (folders: Folder[]) => void
+  fetchProjectFolders: (projectId: string) => Promise<void>
+  setLoading: (loading: boolean) => void
 }
 
 type FolderStore = FolderState & { actions: FolderActions }
@@ -37,10 +47,11 @@ export const useFolderStore = create<FolderStore>()(
         folders: {},
         expandedFolders: new Set<string>(),
         isLoading: false,
+        isSyncing: false,
 
         actions: {
-          createFolder: (input) => {
-            const id = `folder-${generateId()}`
+          createFolder: async (input) => {
+            const tempId = `temp-folder-${generateId()}`
             const now = new Date()
 
             // Calculate depth based on parent
@@ -62,8 +73,9 @@ export const useFolderStore = create<FolderStore>()(
               ? Math.max(...siblings.map((f) => f.position)) + 1
               : 0
 
-            const folder: Folder = {
-              id,
+            // Optimistic update
+            const tempFolder: Folder = {
+              id: tempId,
               projectId: input.projectId,
               parentId: input.parentId ?? null,
               name: input.name,
@@ -76,7 +88,8 @@ export const useFolderStore = create<FolderStore>()(
             }
 
             set((state) => ({
-              folders: { ...state.folders, [id]: folder },
+              folders: { ...state.folders, [tempId]: tempFolder },
+              isSyncing: true,
             }))
 
             // Expand parent if it exists
@@ -84,64 +97,102 @@ export const useFolderStore = create<FolderStore>()(
               get().actions.setFolderExpanded(input.parentId, true)
             }
 
-            return folder
-          },
+            try {
+              // Call API
+              const folder = await folderApi.createFolder(input)
 
-          updateFolder: (id, data) => {
-            set((state) => {
-              const existing = state.folders[id]
-              if (!existing) return state
+              // Replace temp folder with real one
+              set((state) => {
+                const newFolders = { ...state.folders }
+                delete newFolders[tempId]
+                newFolders[folder.id] = folder
+                return { folders: newFolders, isSyncing: false }
+              })
 
-              // If parent changed, recalculate depth
-              let depth = existing.depth
-              if (data.parentId !== undefined && data.parentId !== existing.parentId) {
-                if (data.parentId) {
-                  const newParent = state.folders[data.parentId]
-                  depth = newParent ? newParent.depth + 1 : 0
-                } else {
-                  depth = 0
-                }
-              }
+              return folder
+            } catch (error) {
+              // Rollback optimistic update
+              set((state) => {
+                const newFolders = { ...state.folders }
+                delete newFolders[tempId]
+                return { folders: newFolders, isSyncing: false }
+              })
 
-              return {
-                folders: {
-                  ...state.folders,
-                  [id]: {
-                    ...existing,
-                    ...data,
-                    depth,
-                    updatedAt: new Date(),
-                  },
-                },
-              }
-            })
-
-            // Update depths of descendants if parent changed
-            if (data.parentId !== undefined) {
-              const updateDescendantDepths = (folderId: string, parentDepth: number) => {
-                const children = Object.values(get().folders).filter(
-                  (f) => f.parentId === folderId
-                )
-                for (const child of children) {
-                  const newDepth = parentDepth + 1
-                  set((state) => ({
-                    folders: {
-                      ...state.folders,
-                      [child.id]: { ...child, depth: newDepth },
-                    },
-                  }))
-                  updateDescendantDepths(child.id, newDepth)
-                }
-              }
-
-              const updated = get().folders[id]
-              if (updated) {
-                updateDescendantDepths(id, updated.depth)
-              }
+              const message = error instanceof Error ? error.message : 'Failed to create folder'
+              toast.error(message)
+              throw error
             }
           },
 
-          deleteFolder: (id) => {
+          updateFolder: async (id, data) => {
+            const existing = get().folders[id]
+            if (!existing) return
+
+            // Calculate new depth if parent changed
+            let depth = existing.depth
+            if (data.parentId !== undefined && data.parentId !== existing.parentId) {
+              if (data.parentId) {
+                const newParent = get().folders[data.parentId]
+                depth = newParent ? newParent.depth + 1 : 0
+              } else {
+                depth = 0
+              }
+            }
+
+            // Optimistic update
+            const optimisticFolder = {
+              ...existing,
+              ...data,
+              depth,
+              updatedAt: new Date(),
+            }
+
+            set((state) => ({
+              folders: { ...state.folders, [id]: optimisticFolder },
+              isSyncing: true,
+            }))
+
+            try {
+              await folderApi.updateFolder(id, data)
+              set({ isSyncing: false })
+
+              // Update depths of descendants if parent changed
+              if (data.parentId !== undefined) {
+                const updateDescendantDepths = (folderId: string, parentDepth: number) => {
+                  const children = Object.values(get().folders).filter(
+                    (f) => f.parentId === folderId
+                  )
+                  for (const child of children) {
+                    const newDepth = parentDepth + 1
+                    set((state) => ({
+                      folders: {
+                        ...state.folders,
+                        [child.id]: { ...child, depth: newDepth },
+                      },
+                    }))
+                    updateDescendantDepths(child.id, newDepth)
+                  }
+                }
+
+                const updated = get().folders[id]
+                if (updated) {
+                  updateDescendantDepths(id, updated.depth)
+                }
+              }
+            } catch (error) {
+              // Rollback optimistic update
+              set((state) => ({
+                folders: { ...state.folders, [id]: existing },
+                isSyncing: false,
+              }))
+
+              const message = error instanceof Error ? error.message : 'Failed to update folder'
+              toast.error(message)
+              throw error
+            }
+          },
+
+          deleteFolder: async (id) => {
             // Get all descendant folder IDs to delete
             const getAllDescendantIds = (folderId: string): string[] => {
               const children = Object.values(get().folders).filter(
@@ -156,6 +207,15 @@ export const useFolderStore = create<FolderStore>()(
 
             const idsToDelete = [id, ...getAllDescendantIds(id)]
 
+            // Store for potential rollback
+            const foldersToRestore: Record<string, Folder> = {}
+            for (const deleteId of idsToDelete) {
+              if (get().folders[deleteId]) {
+                foldersToRestore[deleteId] = get().folders[deleteId]
+              }
+            }
+
+            // Optimistic delete
             set((state) => {
               const newFolders = { ...state.folders }
               const newExpanded = new Set(state.expandedFolders)
@@ -168,11 +228,28 @@ export const useFolderStore = create<FolderStore>()(
               return {
                 folders: newFolders,
                 expandedFolders: newExpanded,
+                isSyncing: true,
               }
             })
+
+            try {
+              await folderApi.deleteFolder(id)
+              set({ isSyncing: false })
+              toast.success('Folder deleted')
+            } catch (error) {
+              // Rollback optimistic delete
+              set((state) => ({
+                folders: { ...state.folders, ...foldersToRestore },
+                isSyncing: false,
+              }))
+
+              const message = error instanceof Error ? error.message : 'Failed to delete folder'
+              toast.error(message)
+              throw error
+            }
           },
 
-          moveFolder: (folderId, targetParentId, targetPosition) => {
+          moveFolder: async (folderId, targetParentId, targetPosition) => {
             const folder = get().folders[folderId]
             if (!folder) return
 
@@ -191,10 +268,13 @@ export const useFolderStore = create<FolderStore>()(
             if (targetParentId) {
               const descendants = getAllDescendantIds(folderId)
               if (descendants.includes(targetParentId)) {
-                console.error('Cannot move folder into its own descendant')
+                toast.error('Cannot move folder into its own subfolder')
                 return
               }
             }
+
+            // Store original state for rollback
+            const originalFolder = { ...folder }
 
             // Calculate new position if not provided
             let position = targetPosition ?? 0
@@ -210,10 +290,66 @@ export const useFolderStore = create<FolderStore>()(
                 : 0
             }
 
-            get().actions.updateFolder(folderId, {
-              parentId: targetParentId,
-              position,
-            })
+            // Calculate new depth
+            let depth = 0
+            if (targetParentId) {
+              const newParent = get().folders[targetParentId]
+              depth = newParent ? newParent.depth + 1 : 0
+            }
+
+            // Optimistic update
+            set((state) => ({
+              folders: {
+                ...state.folders,
+                [folderId]: {
+                  ...folder,
+                  parentId: targetParentId,
+                  position,
+                  depth,
+                  updatedAt: new Date(),
+                },
+              },
+              isSyncing: true,
+            }))
+
+            // Update descendant depths
+            const updateDescendantDepths = (parentId: string, parentDepth: number) => {
+              const children = Object.values(get().folders).filter(
+                (f) => f.parentId === parentId
+              )
+              for (const child of children) {
+                const newDepth = parentDepth + 1
+                set((state) => ({
+                  folders: {
+                    ...state.folders,
+                    [child.id]: { ...child, depth: newDepth },
+                  },
+                }))
+                updateDescendantDepths(child.id, newDepth)
+              }
+            }
+            updateDescendantDepths(folderId, depth)
+
+            try {
+              await folderApi.moveFolder(folderId, {
+                targetParentId,
+                targetPosition: position,
+              })
+              set({ isSyncing: false })
+            } catch (error) {
+              // Rollback optimistic update
+              set((state) => ({
+                folders: { ...state.folders, [folderId]: originalFolder },
+                isSyncing: false,
+              }))
+
+              // Re-calculate descendant depths after rollback
+              updateDescendantDepths(folderId, originalFolder.depth)
+
+              const message = error instanceof Error ? error.message : 'Failed to move folder'
+              toast.error(message)
+              throw error
+            }
           },
 
           toggleFolderExpanded: (id) => {
@@ -274,12 +410,29 @@ export const useFolderStore = create<FolderStore>()(
 
             set({ folders: foldersRecord })
           },
+
+          fetchProjectFolders: async (projectId) => {
+            set({ isLoading: true })
+            try {
+              const folders = await folderApi.getProjectFolders(projectId)
+              get().actions.loadFolders(folders)
+            } catch (error) {
+              const message = error instanceof Error ? error.message : 'Failed to load folders'
+              toast.error(message)
+            } finally {
+              set({ isLoading: false })
+            }
+          },
+
+          setLoading: (loading) => {
+            set({ isLoading: loading })
+          },
         },
       }),
       {
         name: 'folder-store',
         partialize: (state) => ({
-          // Only persist expandedFolders, not folders themselves
+          // Only persist expandedFolders, not folders themselves (they come from DB)
           expandedFolders: Array.from(state.expandedFolders),
         }),
         merge: (persisted, current) => ({
@@ -344,6 +497,14 @@ export const useFolderExpanded = (id: string): boolean => {
 
 export const useExpandedFolders = (): Set<string> => {
   return useFolderStore((state) => state.expandedFolders)
+}
+
+export const useFolderLoading = (): boolean => {
+  return useFolderStore((state) => state.isLoading)
+}
+
+export const useFolderSyncing = (): boolean => {
+  return useFolderStore((state) => state.isSyncing)
 }
 
 export const useFolderActions = () => useFolderStore.getState().actions

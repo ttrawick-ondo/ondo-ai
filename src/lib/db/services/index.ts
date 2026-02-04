@@ -7,3 +7,4 @@
 export * from './user'
 export * from './conversation'
 export * from './folder'
+export * from './project'

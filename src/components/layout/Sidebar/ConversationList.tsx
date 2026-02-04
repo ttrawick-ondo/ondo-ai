@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Clock, FolderPlus, Plus } from 'lucide-react'
+import { Clock, FolderPlus, Inbox, MessageSquare, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -17,13 +17,19 @@ import {
   useFolderActions,
   useProjectFolders,
   useConversationsByProject,
+  useChatLoading,
+  useConversationsInitialized,
+  useProjectLoading,
+  useProjectsInitialized,
 } from '@/stores'
 import { SearchBar } from './SearchBar'
 import { PinnedSection } from './PinnedSection'
 import { QuickFilters, filterConversationsByQuickFilter } from './QuickFilters'
 import { ProjectSection } from './ProjectSection'
 import { SidebarDndContext } from './SidebarDndContext'
+import { SidebarSkeleton } from './SidebarSkeleton'
 import { ConversationItem, CreateFolderDialog, MoveConversationDialog } from '@/components/folders'
+import { ConfirmDeleteDialog } from '@/components/ui/confirm-delete-dialog'
 import type { QuickFilter } from './QuickFilters'
 import type { Conversation, FolderTreeNode } from '@/types'
 
@@ -34,8 +40,13 @@ export function ConversationList() {
   const recentConversations = useRecentConversations(10)
   const projects = useProjects()
   const activeConversationId = useChatStore((s) => s.activeConversationId)
+  const isLoading = useChatLoading()
+  const isInitialized = useConversationsInitialized()
+  const projectsLoading = useProjectLoading()
+  const projectsInitialized = useProjectsInitialized()
   const {
     setActiveConversation,
+    createConversation,
     deleteConversation,
     toggleConversationPinned,
     moveConversationToFolder,
@@ -53,6 +64,14 @@ export function ConversationList() {
   } | null>(null)
   const [moveConversationDialogOpen, setMoveConversationDialogOpen] = useState(false)
   const [conversationToMove, setConversationToMove] = useState<Conversation | null>(null)
+
+  // Delete confirmation state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [itemToDelete, setItemToDelete] = useState<{
+    id: string
+    name: string
+    type: 'conversation' | 'folder' | 'project'
+  } | null>(null)
 
   // Build conversations record for FolderTree
   const conversationsRecord = useMemo(() => {
@@ -117,13 +136,30 @@ export function ConversationList() {
 
   const handleDeleteConversation = useCallback(
     (id: string) => {
-      deleteConversation(id)
-      if (activeConversationId === id) {
+      const conv = conversationsRecord[id]
+      setItemToDelete({
+        id,
+        name: conv?.title || 'conversation',
+        type: 'conversation',
+      })
+      setDeleteDialogOpen(true)
+    },
+    [conversationsRecord]
+  )
+
+  const handleConfirmDelete = useCallback(() => {
+    if (!itemToDelete) return
+
+    if (itemToDelete.type === 'conversation') {
+      deleteConversation(itemToDelete.id)
+      if (activeConversationId === itemToDelete.id) {
         router.push('/chat')
       }
-    },
-    [deleteConversation, activeConversationId, router]
-  )
+    } else if (itemToDelete.type === 'folder') {
+      deleteFolder(itemToDelete.id)
+    }
+    setItemToDelete(null)
+  }, [itemToDelete, deleteConversation, deleteFolder, activeConversationId, router])
 
   const handlePinConversation = useCallback(
     (id: string) => {
@@ -156,10 +192,9 @@ export function ConversationList() {
     []
   )
 
-  const { createConversation } = useChatActions()
   const handleCreateConversation = useCallback(
-    (projectId: string, folderId?: string) => {
-      const id = createConversation('New conversation', projectId, undefined, folderId || null)
+    async (projectId: string, folderId?: string) => {
+      const id = await createConversation('New conversation', projectId, undefined, folderId || null)
       router.push(`/chat/${id}`)
     },
     [router, createConversation]
@@ -219,9 +254,15 @@ export function ConversationList() {
 
   const handleDeleteFolder = useCallback(
     (id: string) => {
-      deleteFolder(id)
+      const folder = useFolderStore.getState().folders[id]
+      setItemToDelete({
+        id,
+        name: folder?.name || 'folder',
+        type: 'folder',
+      })
+      setDeleteDialogOpen(true)
     },
-    [deleteFolder]
+    []
   )
 
   // Filtered pinned and recent for quick filter
@@ -246,6 +287,11 @@ export function ConversationList() {
     return filterConversationsByQuickFilter(result, quickFilter)
   }, [recentConversations, searchQuery, quickFilter])
 
+  // Loading state
+  if ((isLoading || projectsLoading) && !isInitialized) {
+    return <SidebarSkeleton showPinned={false} projectCount={2} conversationCount={4} />
+  }
+
   // Empty state
   if (conversations.length === 0 && !searchQuery) {
     return (
@@ -253,10 +299,25 @@ export function ConversationList() {
         <div className="p-2">
           <SearchBar value={searchQuery} onChange={setSearchQuery} />
         </div>
-        <div className="p-4 text-center text-sm text-muted-foreground">
-          No conversations yet.
-          <br />
-          Start a new chat!
+        <div className="flex flex-col items-center justify-center flex-1 p-6 text-center">
+          <div className="rounded-full bg-muted p-3 mb-3">
+            <MessageSquare className="h-6 w-6 text-muted-foreground" />
+          </div>
+          <p className="text-sm font-medium mb-1">No conversations yet</p>
+          <p className="text-xs text-muted-foreground mb-4">
+            Start chatting to see your conversations here
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              const id = await createConversation('New conversation')
+              router.push(`/chat/${id}`)
+            }}
+          >
+            <Plus className="h-4 w-4 mr-1.5" />
+            New Conversation
+          </Button>
         </div>
       </div>
     )
@@ -394,6 +455,15 @@ export function ConversationList() {
             currentFolderId={conversationToMove.folderId}
           />
         )}
+
+        {/* Delete Confirmation Dialog */}
+        <ConfirmDeleteDialog
+          open={deleteDialogOpen}
+          onOpenChange={setDeleteDialogOpen}
+          onConfirm={handleConfirmDelete}
+          itemName={itemToDelete?.name}
+          itemType={itemToDelete?.type}
+        />
       </div>
     </SidebarDndContext>
   )
