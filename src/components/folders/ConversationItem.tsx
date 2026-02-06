@@ -27,6 +27,7 @@ interface ConversationItemProps {
   conversation: Conversation
   depth?: number
   isSelected?: boolean
+  isFocused?: boolean
   onSelect: () => void
   onEdit?: () => void
   onDelete?: () => void
@@ -41,6 +42,7 @@ export function ConversationItem({
   conversation,
   depth = 0,
   isSelected,
+  isFocused,
   onSelect,
   onEdit,
   onDelete,
@@ -76,6 +78,7 @@ export function ConversationItem({
         isSelected
           ? 'bg-secondary text-secondary-foreground'
           : 'hover:bg-muted text-muted-foreground hover:text-foreground',
+        isFocused && !isSelected && 'ring-1 ring-primary/50 bg-muted/50',
         isDragging && 'opacity-50'
       )}
       style={{ paddingLeft: `${(depth + 1) * 12 + 16}px` }}

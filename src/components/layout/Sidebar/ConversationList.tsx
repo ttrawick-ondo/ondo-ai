@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback, useEffect } from 'react'
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Clock, FolderPlus, Inbox, MessageSquare, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -72,6 +72,10 @@ export function ConversationList() {
     name: string
     type: 'conversation' | 'folder' | 'project'
   } | null>(null)
+
+  // Keyboard navigation state
+  const [focusedConversationId, setFocusedConversationId] = useState<string | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
 
   // Build conversations record for FolderTree
   const conversationsRecord = useMemo(() => {
@@ -287,6 +291,65 @@ export function ConversationList() {
     return filterConversationsByQuickFilter(result, quickFilter)
   }, [recentConversations, searchQuery, quickFilter])
 
+  // Build flat list of visible conversation IDs for keyboard navigation
+  const visibleConversationIds = useMemo(() => {
+    const ids: string[] = []
+
+    // Add pinned conversations
+    filteredPinned.forEach((c) => ids.push(c.id))
+
+    // Add conversations from each project (unorganized ones - folders have their own navigation)
+    projects.forEach((project) => {
+      const unorganized = unorganizedByProject[project.id] || []
+      unorganized.forEach((c) => ids.push(c.id))
+    })
+
+    // Add recent conversations
+    filteredRecent.forEach((c) => ids.push(c.id))
+
+    return ids
+  }, [filteredPinned, projects, unorganizedByProject, filteredRecent])
+
+  // Keyboard navigation handler
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only handle if sidebar is focused or no input is focused
+      const activeElement = document.activeElement
+      const isInputFocused = activeElement?.tagName === 'INPUT' || activeElement?.tagName === 'TEXTAREA'
+      if (isInputFocused) return
+
+      // Only handle navigation keys
+      if (!['ArrowUp', 'ArrowDown', 'j', 'k', 'Enter'].includes(e.key)) return
+
+      const currentIndex = focusedConversationId
+        ? visibleConversationIds.indexOf(focusedConversationId)
+        : -1
+
+      if (e.key === 'ArrowDown' || e.key === 'j') {
+        e.preventDefault()
+        const nextIndex = currentIndex < visibleConversationIds.length - 1 ? currentIndex + 1 : 0
+        setFocusedConversationId(visibleConversationIds[nextIndex])
+      } else if (e.key === 'ArrowUp' || e.key === 'k') {
+        e.preventDefault()
+        const prevIndex = currentIndex > 0 ? currentIndex - 1 : visibleConversationIds.length - 1
+        setFocusedConversationId(visibleConversationIds[prevIndex])
+      } else if (e.key === 'Enter' && focusedConversationId) {
+        e.preventDefault()
+        handleSelectConversation(focusedConversationId)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [focusedConversationId, visibleConversationIds, handleSelectConversation])
+
+  // Sync focused conversation with active conversation
+  useEffect(() => {
+    if (activeConversationId && visibleConversationIds.includes(activeConversationId)) {
+      setFocusedConversationId(activeConversationId)
+    }
+  }, [activeConversationId, visibleConversationIds])
+
   // Loading state
   if ((isLoading || projectsLoading) && !isInitialized) {
     return <SidebarSkeleton showPinned={false} projectCount={2} conversationCount={4} />
@@ -354,6 +417,7 @@ export function ConversationList() {
                 <PinnedSection
                   conversations={filteredPinned}
                   selectedConversationId={activeConversationId}
+                  focusedConversationId={focusedConversationId}
                   onSelectConversation={handleSelectConversation}
                   onDeleteConversation={handleDeleteConversation}
                   onPinConversation={handlePinConversation}
@@ -415,6 +479,7 @@ export function ConversationList() {
                     conversation={conv}
                     depth={0}
                     isSelected={conv.id === activeConversationId}
+                    isFocused={conv.id === focusedConversationId}
                     onSelect={() => handleSelectConversation(conv.id)}
                     onDelete={() => handleDeleteConversation(conv.id)}
                     onPin={() => handlePinConversation(conv.id)}

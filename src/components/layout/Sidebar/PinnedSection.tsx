@@ -10,6 +10,7 @@ import type { Conversation } from '@/types'
 interface PinnedSectionProps {
   conversations: Conversation[]
   selectedConversationId?: string | null
+  focusedConversationId?: string | null
   onSelectConversation: (id: string) => void
   onEditConversation?: (id: string) => void
   onDeleteConversation?: (id: string) => void
@@ -21,6 +22,7 @@ interface PinnedSectionProps {
 export function PinnedSection({
   conversations,
   selectedConversationId,
+  focusedConversationId,
   onSelectConversation,
   onEditConversation,
   onDeleteConversation,
@@ -61,6 +63,7 @@ export function PinnedSection({
               conversation={conv}
               depth={0}
               isSelected={conv.id === selectedConversationId}
+              isFocused={conv.id === focusedConversationId}
               onSelect={() => onSelectConversation(conv.id)}
               onEdit={onEditConversation ? () => onEditConversation(conv.id) : undefined}
               onDelete={onDeleteConversation ? () => onDeleteConversation(conv.id) : undefined}

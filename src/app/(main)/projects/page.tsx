@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { cn, formatRelativeTime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,16 +24,23 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { useProjects, useProjectActions, useFolders } from '@/stores'
+import { ConfirmDeleteDialog } from '@/components/ui/confirm-delete-dialog'
+import { useProjects, useProjectActions, useFolders, useProjectLoading, useProjectsInitialized } from '@/stores'
 import { PROJECT_COLORS } from '@/types'
 
 export default function ProjectsPage() {
   const router = useRouter()
   const projects = useProjects()
   const folders = useFolders()
+  const isLoading = useProjectLoading()
+  const isInitialized = useProjectsInitialized()
   const { createProject, deleteProject, setActiveProject } = useProjectActions()
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [newProject, setNewProject] = useState({ name: '', description: '', color: PROJECT_COLORS[0] as string })
+
+  // Delete confirmation state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [projectToDelete, setProjectToDelete] = useState<{ id: string; name: string } | null>(null)
 
   // Show all projects (same as sidebar)
   const filteredProjects = projects
@@ -57,6 +65,53 @@ export default function ProjectsPage() {
   const handleOpen = (projectId: string) => {
     setActiveProject(projectId)
     router.push(`/projects/${projectId}`)
+  }
+
+  const handleDeleteClick = (e: React.MouseEvent, project: { id: string; name: string }) => {
+    e.stopPropagation()
+    setProjectToDelete(project)
+    setDeleteDialogOpen(true)
+  }
+
+  const handleConfirmDelete = () => {
+    if (projectToDelete) {
+      deleteProject(projectToDelete.id)
+      setProjectToDelete(null)
+    }
+  }
+
+  // Loading state
+  if (isLoading && !isInitialized) {
+    return (
+      <div className="p-6">
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <Skeleton className="h-8 w-32 mb-2" />
+            <Skeleton className="h-4 w-64" />
+          </div>
+          <Skeleton className="h-10 w-32" />
+        </div>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {[...Array(6)].map((_, i) => (
+            <Card key={i}>
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-3">
+                  <Skeleton className="h-4 w-4 rounded-full" />
+                  <Skeleton className="h-5 w-32" />
+                </div>
+                <Skeleton className="h-4 w-48 mt-2" />
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-4">
+                  <Skeleton className="h-4 w-28" />
+                  <Skeleton className="h-4 w-20" />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -175,10 +230,7 @@ export default function ProjectsPage() {
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         className="text-destructive"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          deleteProject(project.id)
-                        }}
+                        onClick={(e) => handleDeleteClick(e, { id: project.id, name: project.name })}
                       >
                         <Trash2 className="h-4 w-4 mr-2" />
                         Delete
@@ -211,6 +263,15 @@ export default function ProjectsPage() {
           ))}
         </div>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDeleteDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        onConfirm={handleConfirmDelete}
+        itemName={projectToDelete?.name}
+        itemType="project"
+      />
     </div>
   )
 }
