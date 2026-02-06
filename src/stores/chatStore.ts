@@ -37,6 +37,7 @@ interface ChatActions {
   clearConversation: (id: string) => void
   loadConversations: (conversations: Conversation[]) => void
   fetchUserConversations: (userId: string, projectId?: string) => Promise<void>
+  loadConversationMessages: (conversationId: string) => Promise<void>
   // Tool-related actions
   setEnabledTools: (toolNames: string[]) => void
   executeToolCalls: (toolCalls: ToolCall[]) => Promise<ToolExecutionRecord[]>
@@ -265,6 +266,29 @@ export const useChatStore = create<ChatStore>()(
               },
             }))
 
+            // Persist user message to database (fire-and-forget with error logging)
+            conversationApi.createMessage(activeConversationId, {
+              role: 'user',
+              content: input.content,
+              attachments: input.attachments?.map((a) => ({
+                type: a.type,
+                url: a.url,
+                name: a.name,
+                ...(a.type === 'image' && { width: (a as import('@/types').ImageAttachment).width, height: (a as import('@/types').ImageAttachment).height }),
+                ...(a.type === 'file' && { size: (a as import('@/types').FileAttachment).size, mimeType: (a as import('@/types').FileAttachment).mimeType }),
+              })),
+            }).catch((error) => {
+              console.error('Failed to persist user message:', error)
+            })
+
+            // Also update conversation title if this is the first message
+            if (conversation.messageCount === 0) {
+              const newTitle = input.content.slice(0, 50) + (input.content.length > 50 ? '...' : '')
+              conversationApi.updateConversation(activeConversationId, { title: newTitle }).catch((error) => {
+                console.error('Failed to update conversation title:', error)
+              })
+            }
+
             // Start streaming
             set({ isStreaming: true, streamingMessage: '' })
 
@@ -389,6 +413,20 @@ export const useChatStore = create<ChatStore>()(
                           },
                         }))
 
+                        // Persist assistant message with tool calls to database
+                        conversationApi.createMessage(activeConversationId, {
+                          role: 'assistant',
+                          content: response.message.content || '',
+                          model: response.metadata.model,
+                          provider,
+                          inputTokens: response.usage.inputTokens,
+                          outputTokens: response.usage.outputTokens,
+                          toolCalls: receivedToolCalls as unknown as Record<string, unknown>[],
+                          metadata: assistantMessage.metadata as Record<string, unknown>,
+                        }).catch((error) => {
+                          console.error('Failed to persist assistant message:', error)
+                        })
+
                         // Execute tool calls
                         const toolResults = await actions.executeToolCalls(receivedToolCalls)
 
@@ -421,6 +459,18 @@ export const useChatStore = create<ChatStore>()(
                             },
                           },
                         }))
+
+                        // Persist tool messages to database
+                        for (const toolMsg of toolMessages) {
+                          conversationApi.createMessage(activeConversationId, {
+                            role: 'tool',
+                            content: toolMsg.content,
+                            toolCallId: toolMsg.tool_call_id,
+                            metadata: { tool_executions: toolMsg.tool_executions },
+                          }).catch((error) => {
+                            console.error('Failed to persist tool message:', error)
+                          })
+                        }
 
                         // Update apiMessages with new messages and continue conversation
                         const updatedMessages = get().messagesByConversation[activeConversationId] || []
@@ -469,6 +519,19 @@ export const useChatStore = create<ChatStore>()(
                           isStreaming: false,
                           streamingMessage: '',
                         }))
+
+                        // Persist final assistant message to database
+                        conversationApi.createMessage(activeConversationId, {
+                          role: 'assistant',
+                          content: response.message.content || fullResponse,
+                          model: response.metadata.model,
+                          provider,
+                          inputTokens: response.usage.inputTokens,
+                          outputTokens: response.usage.outputTokens,
+                          metadata: aiMessage.metadata as Record<string, unknown>,
+                        }).catch((error) => {
+                          console.error('Failed to persist assistant message:', error)
+                        })
                       }
                     },
                     onError: (error) => {
@@ -545,6 +608,47 @@ export const useChatStore = create<ChatStore>()(
               get().actions.loadConversations(conversations)
             } catch (error) {
               const message = error instanceof Error ? error.message : 'Failed to load conversations'
+              toast.error(message)
+            } finally {
+              set({ isLoading: false })
+            }
+          },
+
+          loadConversationMessages: async (conversationId) => {
+            // Skip if messages are already loaded for this conversation
+            const existingMessages = get().messagesByConversation[conversationId]
+            if (existingMessages && existingMessages.length > 0) {
+              return
+            }
+
+            set({ isLoading: true })
+            try {
+              const messages = await conversationApi.getMessages(conversationId)
+
+              // Map API response to Message type with proper date handling
+              const mappedMessages: Message[] = messages.map((msg) => ({
+                ...msg,
+                createdAt: new Date(msg.createdAt),
+              }))
+
+              set((state) => ({
+                messagesByConversation: {
+                  ...state.messagesByConversation,
+                  [conversationId]: mappedMessages,
+                },
+                // Update conversation message count if we have the conversation
+                conversations: state.conversations[conversationId]
+                  ? {
+                      ...state.conversations,
+                      [conversationId]: {
+                        ...state.conversations[conversationId],
+                        messageCount: mappedMessages.length,
+                      },
+                    }
+                  : state.conversations,
+              }))
+            } catch (error) {
+              const message = error instanceof Error ? error.message : 'Failed to load messages'
               toast.error(message)
             } finally {
               set({ isLoading: false })
