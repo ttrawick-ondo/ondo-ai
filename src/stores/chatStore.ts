@@ -841,7 +841,8 @@ export const useChatStore = create<ChatStore>()(
               const branch = await conversationApi.branchConversation(
                 sourceId,
                 branchPointMessageId,
-                title
+                title,
+                sourceConversation.userId
               )
 
               // Replace temp with real

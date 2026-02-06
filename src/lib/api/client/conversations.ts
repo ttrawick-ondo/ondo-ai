@@ -328,12 +328,13 @@ class ConversationApiClient {
   async branchConversation(
     conversationId: string,
     branchPointMessageId: string,
-    title?: string
+    title?: string,
+    userId: string = 'user-1'
   ): Promise<Conversation> {
     const response = await fetch(`${API_BASE}/${conversationId}/branch`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ branchPointMessageId, title }),
+      body: JSON.stringify({ branchPointMessageId, title, userId }),
     })
 
     if (!response.ok) {
