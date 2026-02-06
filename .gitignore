@@ -47,3 +47,5 @@ test-results/
 # Local database
 *.db
 *.db-journal
+prisma/*.db
+prisma/*.db-journal

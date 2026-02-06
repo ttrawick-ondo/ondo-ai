@@ -11,7 +11,7 @@ import { PrismaLibSql } from '@prisma/adapter-libsql'
 
 // Create Prisma adapter factory
 const adapter = new PrismaLibSql({
-  url: process.env.DATABASE_URL || 'file:./dev.db',
+  url: process.env.DATABASE_URL || 'file:./prisma/dev.db',
 })
 
 // Create Prisma client with adapter

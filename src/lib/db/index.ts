@@ -23,7 +23,7 @@ declare global {
  */
 function createPrismaClient(): PrismaClient {
   // Get database URL from environment
-  let databaseUrl = process.env.DATABASE_URL || 'file:./dev.db'
+  let databaseUrl = process.env.DATABASE_URL || 'file:./prisma/dev.db'
 
   // For local SQLite files, convert relative path to absolute for libSQL
   if (databaseUrl.startsWith('file:')) {
