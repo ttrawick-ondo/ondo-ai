@@ -30,8 +30,8 @@ export function ChatContainer({ conversationId }: ChatContainerProps) {
 
   // Handle branching from a message
   const handleBranch = useCallback(
-    (messageId: string) => {
-      const newConversationId = branchConversation(conversationId, messageId)
+    async (messageId: string) => {
+      const newConversationId = await branchConversation(conversationId, messageId)
       router.push(`/chat/${newConversationId}`)
     },
     [branchConversation, conversationId, router]
