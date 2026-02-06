@@ -20,11 +20,12 @@ const prisma = new PrismaClient({ adapter })
 async function main() {
   console.log('Seeding database...')
 
-  // Create default user
+  // Create default user with predictable ID for development
   const user = await prisma.user.upsert({
     where: { email: 'demo@ondo.ai' },
     update: {},
     create: {
+      id: 'user-1', // Predictable ID for development
       email: 'demo@ondo.ai',
       name: 'Demo User',
       role: 'admin',
@@ -42,11 +43,12 @@ async function main() {
 
   console.log(`Created user: ${user.email}`)
 
-  // Create default workspace
+  // Create default workspace with predictable ID for development
   const workspace = await prisma.workspace.upsert({
     where: { slug: 'default' },
     update: {},
     create: {
+      id: 'default', // Predictable ID for development
       name: 'Default Workspace',
       description: 'Your personal workspace',
       slug: 'default',

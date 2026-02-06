@@ -43,3 +43,7 @@ playwright-report/
 test-results/
 
 /src/generated/prisma
+
+# Local database
+*.db
+*.db-journal

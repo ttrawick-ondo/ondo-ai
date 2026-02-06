@@ -1,9 +1,11 @@
 'use client'
 
+import { useEffect } from 'react'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { AlertTriangle } from 'lucide-react'
+import { useChatActions, useProjectActions } from '@/stores'
 
 interface MainLayoutProps {
   children: React.ReactNode
@@ -46,6 +48,23 @@ function ContentErrorFallback() {
 }
 
 export function MainLayout({ children }: MainLayoutProps) {
+  const { fetchUserConversations } = useChatActions()
+  const { fetchUserProjects } = useProjectActions()
+
+  // Fetch data on mount
+  useEffect(() => {
+    const userId = 'user-1' // TODO: Get from auth context
+    const workspaceId = 'default' // TODO: Get from auth context
+
+    // Fetch all data in parallel
+    Promise.all([
+      fetchUserConversations(userId),
+      fetchUserProjects(userId, workspaceId),
+    ]).catch((error) => {
+      console.error('Error loading initial data:', error)
+    })
+  }, [fetchUserConversations, fetchUserProjects])
+
   return (
     <div className="flex h-screen overflow-hidden">
       <ErrorBoundary fallback={<SidebarErrorFallback />}>
