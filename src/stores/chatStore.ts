@@ -266,7 +266,7 @@ export const useChatStore = create<ChatStore>()(
               },
             }))
 
-            // Persist user message to database (fire-and-forget with error logging)
+            // Persist user message to database and update local ID with database ID
             conversationApi.createMessage(activeConversationId, {
               role: 'user',
               content: input.content,
@@ -277,6 +277,20 @@ export const useChatStore = create<ChatStore>()(
                 ...(a.type === 'image' && { width: (a as import('@/types').ImageAttachment).width, height: (a as import('@/types').ImageAttachment).height }),
                 ...(a.type === 'file' && { size: (a as import('@/types').FileAttachment).size, mimeType: (a as import('@/types').FileAttachment).mimeType }),
               })),
+            }).then((dbMessage) => {
+              // Update local message ID with database ID for branching support
+              set((state) => {
+                const messages = state.messagesByConversation[activeConversationId] || []
+                const updatedMessages = messages.map((msg) =>
+                  msg.id === userMessageId ? { ...msg, id: dbMessage.id } : msg
+                )
+                return {
+                  messagesByConversation: {
+                    ...state.messagesByConversation,
+                    [activeConversationId]: updatedMessages,
+                  },
+                }
+              })
             }).catch((error) => {
               console.error('Failed to persist user message:', error)
             })
@@ -423,6 +437,20 @@ export const useChatStore = create<ChatStore>()(
                           outputTokens: response.usage.outputTokens,
                           toolCalls: receivedToolCalls as unknown as Record<string, unknown>[],
                           metadata: assistantMessage.metadata as Record<string, unknown>,
+                        }).then((dbMessage) => {
+                          // Update local message ID with database ID
+                          set((state) => {
+                            const messages = state.messagesByConversation[activeConversationId] || []
+                            const updatedMessages = messages.map((msg) =>
+                              msg.id === aiMessageId ? { ...msg, id: dbMessage.id } : msg
+                            )
+                            return {
+                              messagesByConversation: {
+                                ...state.messagesByConversation,
+                                [activeConversationId]: updatedMessages,
+                              },
+                            }
+                          })
                         }).catch((error) => {
                           console.error('Failed to persist assistant message:', error)
                         })
@@ -460,17 +488,30 @@ export const useChatStore = create<ChatStore>()(
                           },
                         }))
 
-                        // Persist tool messages to database
-                        for (const toolMsg of toolMessages) {
+                        // Persist tool messages to database and update local IDs
+                        toolMessages.forEach((toolMsg) => {
                           conversationApi.createMessage(activeConversationId, {
                             role: 'tool',
                             content: toolMsg.content,
                             toolCallId: toolMsg.tool_call_id,
                             metadata: { tool_executions: toolMsg.tool_executions },
+                          }).then((dbMessage) => {
+                            set((state) => {
+                              const messages = state.messagesByConversation[activeConversationId] || []
+                              const updatedMessages = messages.map((msg) =>
+                                msg.id === toolMsg.id ? { ...msg, id: dbMessage.id } : msg
+                              )
+                              return {
+                                messagesByConversation: {
+                                  ...state.messagesByConversation,
+                                  [activeConversationId]: updatedMessages,
+                                },
+                              }
+                            })
                           }).catch((error) => {
                             console.error('Failed to persist tool message:', error)
                           })
-                        }
+                        })
 
                         // Update apiMessages with new messages and continue conversation
                         const updatedMessages = get().messagesByConversation[activeConversationId] || []
@@ -529,6 +570,20 @@ export const useChatStore = create<ChatStore>()(
                           inputTokens: response.usage.inputTokens,
                           outputTokens: response.usage.outputTokens,
                           metadata: aiMessage.metadata as Record<string, unknown>,
+                        }).then((dbMessage) => {
+                          // Update local message ID with database ID
+                          set((state) => {
+                            const messages = state.messagesByConversation[activeConversationId] || []
+                            const updatedMessages = messages.map((msg) =>
+                              msg.id === aiMessageId ? { ...msg, id: dbMessage.id } : msg
+                            )
+                            return {
+                              messagesByConversation: {
+                                ...state.messagesByConversation,
+                                [activeConversationId]: updatedMessages,
+                              },
+                            }
+                          })
                         }).catch((error) => {
                           console.error('Failed to persist assistant message:', error)
                         })
