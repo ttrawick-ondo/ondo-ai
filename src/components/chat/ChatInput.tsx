@@ -11,7 +11,8 @@ import { ImageUpload, ImagePreviewList } from './ImageUpload'
 import { FileUpload, FileDropZone } from './FileUpload'
 import { FilePreviewList } from './FilePreview'
 import { PromptSelector } from './PromptSelector'
-import { useChatActions, useIsStreaming, useUserPreferences, useChatStore, useActiveWorkspace, useModels } from '@/stores'
+import { useChatActions, useIsStreaming, useUserPreferences, useChatStore, useActiveWorkspaceId, useModels } from '@/stores'
+import { useWorkspace } from '@/lib/queries'
 import type { ImageAttachment, FileAttachment } from '@/types'
 
 interface ChatInputProps {
@@ -29,7 +30,8 @@ export function ChatInput({ conversationId }: ChatInputProps) {
   const isStreaming = useIsStreaming()
   const preferences = useUserPreferences()
   const conversation = useChatStore((state) => state.conversations[conversationId])
-  const workspace = useActiveWorkspace()
+  const activeWorkspaceId = useActiveWorkspaceId()
+  const { data: workspace } = useWorkspace(activeWorkspaceId)
 
   const selectedModelId = conversation?.modelId || preferences.defaultModelId || 'claude-sonnet-4-20250514'
   const models = useModels()

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Plus,
@@ -29,22 +29,66 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
-  useFilteredPrompts,
-  useFavoritePrompts,
-  usePromptCategories,
   usePromptStore,
-  usePromptActions,
+  usePromptUIActions,
+  useFavoriteIds,
+  useActiveCategoryId,
+  usePromptSearchQuery,
 } from '@/stores'
+import {
+  usePrompts as usePromptsQuery,
+  usePromptCategories as usePromptCategoriesQuery,
+  useDeletePrompt,
+  useDuplicatePrompt,
+} from '@/lib/queries'
 
 export default function PromptsPage() {
   const router = useRouter()
-  const filteredPrompts = useFilteredPrompts()
-  const favoritePrompts = useFavoritePrompts()
-  const categories = usePromptCategories()
-  const searchQuery = usePromptStore((s) => s.searchQuery)
-  const activeCategoryId = usePromptStore((s) => s.activeCategoryId)
-  const { setSearchQuery, setActiveCategory, toggleFavorite, duplicatePrompt, deletePrompt } =
-    usePromptActions()
+  const { data: allPrompts = [] } = usePromptsQuery({ userId: 'user-1' }) // TODO: Get from auth
+  const { data: categories = [] } = usePromptCategoriesQuery()
+  const searchQuery = usePromptSearchQuery()
+  const activeCategoryId = useActiveCategoryId()
+  const favoriteIds = useFavoriteIds()
+  const { setSearchQuery, setActiveCategory, toggleFavorite } = usePromptUIActions()
+  const deletePromptMutation = useDeletePrompt()
+  const duplicatePromptMutation = useDuplicatePrompt()
+
+  // Add isFavorite to prompts based on local favorites
+  const promptsWithFavorites = useMemo(() =>
+    allPrompts.map(p => ({ ...p, isFavorite: favoriteIds.has(p.id) })),
+    [allPrompts, favoriteIds]
+  )
+
+  // Compute filtered prompts
+  const filteredPrompts = useMemo(() => {
+    let result = promptsWithFavorites
+
+    if (activeCategoryId === 'favorites') {
+      result = result.filter(p => p.isFavorite)
+    } else if (activeCategoryId) {
+      result = result.filter(p => p.categoryId === activeCategoryId)
+    }
+
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase()
+      result = result.filter(
+        p =>
+          p.title.toLowerCase().includes(query) ||
+          p.description?.toLowerCase().includes(query) ||
+          p.tags.some(t => t.toLowerCase().includes(query))
+      )
+    }
+
+    return result
+  }, [promptsWithFavorites, activeCategoryId, searchQuery])
+
+  const favoritePrompts = useMemo(() =>
+    promptsWithFavorites.filter(p => p.isFavorite),
+    [promptsWithFavorites]
+  )
+
+  const deletePrompt = (id: string) => deletePromptMutation.mutate(id)
+  const duplicatePrompt = (id: string) => duplicatePromptMutation.mutate({ promptId: id, userId: 'user-1' })
 
   const getVisibilityIcon = (visibility: string) => {
     switch (visibility) {

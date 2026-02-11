@@ -1,16 +1,19 @@
 'use client'
 
+import { useRouter } from 'next/navigation'
 import { Plus, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
 import { useChatActions } from '@/stores'
 
 export function SidebarHeader() {
+  const router = useRouter()
   const { createConversation, setActiveConversation } = useChatActions()
 
   const handleNewChat = async () => {
     const id = await createConversation()
     setActiveConversation(id)
+    router.push(`/chat/${id}`)
   }
 
   return (

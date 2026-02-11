@@ -4,9 +4,16 @@ import { devtools, persist } from 'zustand/middleware'
 import { toast } from 'sonner'
 import type { Conversation, Message, SendMessageInput, AIProvider, ToolCall, ToolExecutionRecord } from '@/types'
 import { generateId } from '@/lib/utils'
-import { chatClient, type RoutingInfo } from '@/lib/api/client'
 import { conversationApi } from '@/lib/api/client/conversations'
-import { toolRegistry, registerBuiltinTools } from '@/lib/tools'
+import { registerBuiltinTools } from '@/lib/tools'
+import {
+  streamChat,
+  buildApiMessages,
+  createUserMessage,
+  getProviderFromModelId,
+  persistMessage,
+} from '@/lib/services/chat-streaming'
+import { executeToolCalls as executeToolCallsService } from '@/lib/services/tool-execution'
 import { useRoutingStore } from './routingStore'
 
 // Register built-in tools on module load
@@ -242,24 +249,17 @@ export const useChatStore = create<ChatStore>()(
           },
 
           sendMessage: async (input) => {
-            const { activeConversationId, conversations, messagesByConversation, enabledTools, actions } = get()
+            const { activeConversationId, conversations, messagesByConversation, enabledTools } = get()
             if (!activeConversationId) return
 
             const conversation = conversations[activeConversationId]
             const modelId = input.modelId || conversation.modelId || 'claude-sonnet-4-20250514'
+            const provider = getProviderFromModelId(modelId)
 
-            const userMessageId = `msg-${generateId()}`
+            // Create and add user message
+            const userMessage = createUserMessage(activeConversationId, input.content, input.attachments)
+            const userMessageId = userMessage.id
             const now = new Date()
-
-            // Add user message
-            const userMessage: Message = {
-              id: userMessageId,
-              conversationId: activeConversationId,
-              role: 'user',
-              content: input.content,
-              attachments: input.attachments?.map((a) => ({ ...a, id: generateId() })),
-              createdAt: now,
-            }
 
             set((state) => ({
               messagesByConversation: {
@@ -284,364 +284,118 @@ export const useChatStore = create<ChatStore>()(
               },
             }))
 
-            // Persist user message to database and update local ID with database ID
-            conversationApi.createMessage(activeConversationId, {
-              role: 'user',
-              content: input.content,
-              attachments: input.attachments?.map((a) => ({
-                type: a.type,
-                url: a.url,
-                name: a.name,
-                ...(a.type === 'image' && { width: (a as import('@/types').ImageAttachment).width, height: (a as import('@/types').ImageAttachment).height }),
-                ...(a.type === 'file' && { size: (a as import('@/types').FileAttachment).size, mimeType: (a as import('@/types').FileAttachment).mimeType }),
-              })),
-            }).then((dbMessage) => {
-              // Update local message ID with database ID for branching support
-              set((state) => {
-                const messages = state.messagesByConversation[activeConversationId] || []
-                const updatedMessages = messages.map((msg) =>
-                  msg.id === userMessageId ? { ...msg, id: dbMessage.id } : msg
-                )
-                return {
-                  messagesByConversation: {
-                    ...state.messagesByConversation,
-                    [activeConversationId]: updatedMessages,
-                  },
-                }
+            // Persist user message to database
+            persistMessage(activeConversationId, userMessage)
+              .then((dbId) => {
+                set((state) => {
+                  const messages = state.messagesByConversation[activeConversationId] || []
+                  return {
+                    messagesByConversation: {
+                      ...state.messagesByConversation,
+                      [activeConversationId]: messages.map((msg) =>
+                        msg.id === userMessageId ? { ...msg, id: dbId } : msg
+                      ),
+                    },
+                  }
+                })
               })
-            }).catch((error) => {
-              console.error('Failed to persist user message:', error)
-            })
+              .catch(console.error)
 
-            // Also update conversation title if this is the first message
+            // Update conversation title if first message
             if (conversation.messageCount === 0) {
               const newTitle = input.content.slice(0, 50) + (input.content.length > 50 ? '...' : '')
-              conversationApi.updateConversation(activeConversationId, { title: newTitle }).catch((error) => {
-                console.error('Failed to update conversation title:', error)
-              })
+              conversationApi.updateConversation(activeConversationId, { title: newTitle }).catch(console.error)
             }
 
             // Start streaming
             set({ isStreaming: true, streamingMessage: '' })
 
-            // Get conversation messages for API
+            // Build API messages
             const existingMessages = messagesByConversation[activeConversationId] || []
+            const apiMessages = buildApiMessages([...existingMessages, userMessage])
 
-            // Build messages including tool call/response messages, images, and files
-            const buildApiMessages = (messages: Message[]) => {
-              return messages.map((msg) => {
-                // Extract image attachments
-                const images = msg.attachments?.filter((a) => a.type === 'image') as import('@/types').ImageAttachment[] | undefined
-                // Extract file attachments
-                const files = msg.attachments?.filter((a) => a.type === 'file') as import('@/types').FileAttachment[] | undefined
-
-                return {
-                  role: msg.role,
-                  content: msg.content,
-                  ...(msg.tool_calls && { tool_calls: msg.tool_calls }),
-                  ...(msg.tool_call_id && { tool_call_id: msg.tool_call_id }),
-                  ...(images && images.length > 0 && { images }),
-                  ...(files && files.length > 0 && { files }),
-                }
-              })
-            }
-
-            let apiMessages = buildApiMessages([...existingMessages, userMessage])
-
-            // Determine provider from model ID
-            let provider: AIProvider = 'anthropic'
-            if (modelId.startsWith('gpt-')) provider = 'openai'
-            else if (modelId.startsWith('glean-')) provider = 'glean'
-            else if (modelId.startsWith('dust-')) provider = 'dust'
-            else if (modelId.startsWith('ondobot-')) provider = 'ondobot'
-
-            // Determine which tools to use
-            const toolsToUse = input.tools || enabledTools
-            const toolsConfig = toolsToUse.length > 0 ? toolRegistry.toAPIFormat(toolsToUse) : undefined
-
-            // Get routing options from the routing store
+            // Get routing options
             const routingState = useRoutingStore.getState()
             const routingOptions = routingState.actions.getRoutingOptions()
 
-            // Recursive function to handle tool calls
-            const processResponse = async () => {
-              const aiMessageId = `msg-${generateId()}`
-              let fullResponse = ''
-              let receivedToolCalls: ToolCall[] = []
-              let routingInfo: RoutingInfo | undefined
-
-              try {
-                await chatClient.stream(
-                  {
-                    conversationId: activeConversationId,
-                    messages: apiMessages,
+            // Stream the chat
+            await streamChat(
+              {
+                conversationId: activeConversationId,
+                messages: apiMessages,
+                provider,
+                modelId,
+                tools: input.tools || enabledTools,
+                toolChoice: input.tool_choice,
+                routingOptions,
+              },
+              {
+                onStreamStart: () => {
+                  set({ streamingMessage: '' })
+                },
+                onStreamDelta: (_delta, fullContent) => {
+                  set({ streamingMessage: fullContent })
+                },
+                onStreamComplete: () => {
+                  set({ isStreaming: false, streamingMessage: '' })
+                },
+                onMessageCreated: (message) => {
+                  set((state) => ({
+                    messagesByConversation: {
+                      ...state.messagesByConversation,
+                      [activeConversationId]: [
+                        ...(state.messagesByConversation[activeConversationId] || []),
+                        message,
+                      ],
+                    },
+                    conversations: {
+                      ...state.conversations,
+                      [activeConversationId]: {
+                        ...state.conversations[activeConversationId],
+                        messageCount: state.conversations[activeConversationId].messageCount + 1,
+                        lastMessageAt: new Date(),
+                        updatedAt: new Date(),
+                      },
+                    },
+                  }))
+                },
+                onToolsExecuting: (toolCalls) => {
+                  set({ isExecutingTools: true, pendingToolCalls: toolCalls })
+                },
+                onToolsComplete: () => {
+                  set({ isExecutingTools: false, pendingToolCalls: [] })
+                },
+                onRoutingInfo: (info) => {
+                  useRoutingStore.getState().actions.setLastRouteInfo({
+                    intent: info.intent,
+                    confidence: info.confidence,
                     provider,
-                    model: modelId,
-                    options: {
-                      tools: toolsConfig,
-                      tool_choice: input.tool_choice,
+                    wasAutoRouted: info.wasAutoRouted,
+                  })
+                },
+                onError: (error) => {
+                  console.error('Chat error:', error)
+                  const errorMessage: Message = {
+                    id: `msg-${generateId()}`,
+                    conversationId: activeConversationId,
+                    role: 'assistant',
+                    content: `Sorry, there was an error processing your request: ${error}`,
+                    createdAt: new Date(),
+                  }
+                  set((state) => ({
+                    messagesByConversation: {
+                      ...state.messagesByConversation,
+                      [activeConversationId]: [
+                        ...(state.messagesByConversation[activeConversationId] || []),
+                        errorMessage,
+                      ],
                     },
-                  },
-                  {
-                    onStart: () => {
-                      set({ streamingMessage: '' })
-                    },
-                    onDelta: (delta) => {
-                      fullResponse += delta
-                      set({ streamingMessage: fullResponse })
-                    },
-                    onRoutingInfo: (info) => {
-                      routingInfo = info
-                      // Update the routing store with the last routing info
-                      useRoutingStore.getState().actions.setLastRouteInfo({
-                        intent: info.intent,
-                        confidence: info.confidence,
-                        provider: provider,
-                        wasAutoRouted: info.wasAutoRouted,
-                      })
-                    },
-                    onDone: async (response) => {
-                      // Check if response contains tool calls
-                      if (response.message.tool_calls && response.message.tool_calls.length > 0) {
-                        receivedToolCalls = response.message.tool_calls
-
-                        // Add assistant message with tool calls
-                        const assistantMessage: Message = {
-                          id: aiMessageId,
-                          conversationId: activeConversationId,
-                          role: 'assistant',
-                          content: response.message.content || '',
-                          tool_calls: receivedToolCalls,
-                          metadata: {
-                            model: response.metadata.model,
-                            tokenCount: response.usage.totalTokens,
-                            processingTimeMs: response.metadata.processingTimeMs,
-                            routing: routingInfo ? {
-                              intent: routingInfo.intent,
-                              confidence: routingInfo.confidence,
-                              wasAutoRouted: routingInfo.wasAutoRouted,
-                              routedBy: routingInfo.routedBy,
-                            } : undefined,
-                          },
-                          createdAt: new Date(),
-                        }
-
-                        set((state) => ({
-                          messagesByConversation: {
-                            ...state.messagesByConversation,
-                            [activeConversationId]: [
-                              ...(state.messagesByConversation[activeConversationId] || []),
-                              assistantMessage,
-                            ],
-                          },
-                          conversations: {
-                            ...state.conversations,
-                            [activeConversationId]: {
-                              ...state.conversations[activeConversationId],
-                              messageCount: state.conversations[activeConversationId].messageCount + 1,
-                              lastMessageAt: new Date(),
-                              updatedAt: new Date(),
-                            },
-                          },
-                        }))
-
-                        // Persist assistant message with tool calls to database
-                        conversationApi.createMessage(activeConversationId, {
-                          role: 'assistant',
-                          content: response.message.content || '',
-                          model: response.metadata.model,
-                          provider,
-                          inputTokens: response.usage.inputTokens,
-                          outputTokens: response.usage.outputTokens,
-                          toolCalls: receivedToolCalls as unknown as Record<string, unknown>[],
-                          metadata: assistantMessage.metadata as Record<string, unknown>,
-                        }).then((dbMessage) => {
-                          // Update local message ID with database ID
-                          set((state) => {
-                            const messages = state.messagesByConversation[activeConversationId] || []
-                            const updatedMessages = messages.map((msg) =>
-                              msg.id === aiMessageId ? { ...msg, id: dbMessage.id } : msg
-                            )
-                            return {
-                              messagesByConversation: {
-                                ...state.messagesByConversation,
-                                [activeConversationId]: updatedMessages,
-                              },
-                            }
-                          })
-                        }).catch((error) => {
-                          console.error('Failed to persist assistant message:', error)
-                        })
-
-                        // Execute tool calls
-                        const toolResults = await actions.executeToolCalls(receivedToolCalls)
-
-                        // Add tool response messages
-                        const toolMessages: Message[] = toolResults.map((result) => ({
-                          id: `msg-${generateId()}`,
-                          conversationId: activeConversationId,
-                          role: 'tool' as const,
-                          content: result.result.success ? result.result.output : (result.result.error || 'Tool execution failed'),
-                          tool_call_id: result.id,
-                          tool_executions: [result],
-                          createdAt: new Date(),
-                        }))
-
-                        set((state) => ({
-                          messagesByConversation: {
-                            ...state.messagesByConversation,
-                            [activeConversationId]: [
-                              ...(state.messagesByConversation[activeConversationId] || []),
-                              ...toolMessages,
-                            ],
-                          },
-                          conversations: {
-                            ...state.conversations,
-                            [activeConversationId]: {
-                              ...state.conversations[activeConversationId],
-                              messageCount: state.conversations[activeConversationId].messageCount + toolMessages.length,
-                              lastMessageAt: new Date(),
-                              updatedAt: new Date(),
-                            },
-                          },
-                        }))
-
-                        // Persist tool messages to database and update local IDs
-                        toolMessages.forEach((toolMsg) => {
-                          conversationApi.createMessage(activeConversationId, {
-                            role: 'tool',
-                            content: toolMsg.content,
-                            toolCallId: toolMsg.tool_call_id,
-                            metadata: { tool_executions: toolMsg.tool_executions },
-                          }).then((dbMessage) => {
-                            set((state) => {
-                              const messages = state.messagesByConversation[activeConversationId] || []
-                              const updatedMessages = messages.map((msg) =>
-                                msg.id === toolMsg.id ? { ...msg, id: dbMessage.id } : msg
-                              )
-                              return {
-                                messagesByConversation: {
-                                  ...state.messagesByConversation,
-                                  [activeConversationId]: updatedMessages,
-                                },
-                              }
-                            })
-                          }).catch((error) => {
-                            console.error('Failed to persist tool message:', error)
-                          })
-                        })
-
-                        // Update apiMessages with new messages and continue conversation
-                        const updatedMessages = get().messagesByConversation[activeConversationId] || []
-                        apiMessages = buildApiMessages(updatedMessages)
-
-                        // Recursively process next response (to handle multi-turn tool use)
-                        await processResponse()
-                      } else {
-                        // No tool calls, add final assistant message
-                        const aiMessage: Message = {
-                          id: aiMessageId,
-                          conversationId: activeConversationId,
-                          role: 'assistant',
-                          content: response.message.content || fullResponse,
-                          metadata: {
-                            model: response.metadata.model,
-                            tokenCount: response.usage.totalTokens,
-                            processingTimeMs: response.metadata.processingTimeMs,
-                            routing: routingInfo ? {
-                              intent: routingInfo.intent,
-                              confidence: routingInfo.confidence,
-                              wasAutoRouted: routingInfo.wasAutoRouted,
-                              routedBy: routingInfo.routedBy,
-                            } : undefined,
-                          },
-                          createdAt: new Date(),
-                        }
-
-                        set((state) => ({
-                          messagesByConversation: {
-                            ...state.messagesByConversation,
-                            [activeConversationId]: [
-                              ...(state.messagesByConversation[activeConversationId] || []),
-                              aiMessage,
-                            ],
-                          },
-                          conversations: {
-                            ...state.conversations,
-                            [activeConversationId]: {
-                              ...state.conversations[activeConversationId],
-                              messageCount: state.conversations[activeConversationId].messageCount + 1,
-                              lastMessageAt: new Date(),
-                              updatedAt: new Date(),
-                            },
-                          },
-                          isStreaming: false,
-                          streamingMessage: '',
-                        }))
-
-                        // Persist final assistant message to database
-                        conversationApi.createMessage(activeConversationId, {
-                          role: 'assistant',
-                          content: response.message.content || fullResponse,
-                          model: response.metadata.model,
-                          provider,
-                          inputTokens: response.usage.inputTokens,
-                          outputTokens: response.usage.outputTokens,
-                          metadata: aiMessage.metadata as Record<string, unknown>,
-                        }).then((dbMessage) => {
-                          // Update local message ID with database ID
-                          set((state) => {
-                            const messages = state.messagesByConversation[activeConversationId] || []
-                            const updatedMessages = messages.map((msg) =>
-                              msg.id === aiMessageId ? { ...msg, id: dbMessage.id } : msg
-                            )
-                            return {
-                              messagesByConversation: {
-                                ...state.messagesByConversation,
-                                [activeConversationId]: updatedMessages,
-                              },
-                            }
-                          })
-                        }).catch((error) => {
-                          console.error('Failed to persist assistant message:', error)
-                        })
-                      }
-                    },
-                    onError: (error) => {
-                      console.error('Chat error:', error)
-
-                      // Add error message
-                      const errorMessage: Message = {
-                        id: aiMessageId,
-                        conversationId: activeConversationId,
-                        role: 'assistant',
-                        content: `Sorry, there was an error processing your request: ${error}`,
-                        createdAt: new Date(),
-                      }
-
-                      set((state) => ({
-                        messagesByConversation: {
-                          ...state.messagesByConversation,
-                          [activeConversationId]: [
-                            ...(state.messagesByConversation[activeConversationId] || []),
-                            errorMessage,
-                          ],
-                        },
-                        isStreaming: false,
-                        streamingMessage: '',
-                      }))
-                    },
-                  },
-                  {}, // StreamOptions (use defaults)
-                  routingOptions
-                )
-              } catch (error) {
-                console.error('Chat error:', error)
-                set({ isStreaming: false, streamingMessage: '' })
+                    isStreaming: false,
+                    streamingMessage: '',
+                  }))
+                },
               }
-            }
-
-            await processResponse()
+            )
           },
 
           clearConversation: (id) => {
@@ -736,59 +490,12 @@ export const useChatStore = create<ChatStore>()(
             set({ isExecutingTools: true, pendingToolCalls: toolCalls })
 
             try {
-              // Parse tool call arguments with error handling
-              const parsedCalls = toolCalls.map((tc) => {
-                let parsedArgs: Record<string, unknown>
-                try {
-                  parsedArgs = JSON.parse(tc.function.arguments)
-                } catch (parseError) {
-                  console.error(`Failed to parse arguments for tool ${tc.function.name}:`, parseError)
-                  toast.error(`Invalid arguments for tool "${tc.function.name}"`)
-                  // Return a placeholder that will fail gracefully
-                  parsedArgs = {}
-                }
-
-                // Validate that parsedArgs is an object
-                if (typeof parsedArgs !== 'object' || parsedArgs === null) {
-                  console.error(`Invalid argument type for tool ${tc.function.name}: expected object`)
-                  toast.error(`Invalid argument format for tool "${tc.function.name}"`)
-                  parsedArgs = {}
-                }
-
-                return {
-                  id: tc.id,
-                  name: tc.function.name,
-                  arguments: parsedArgs,
-                }
-              })
-
-              const results = await toolRegistry.executeToolCalls(parsedCalls, { parallel: true })
-
+              const results = await executeToolCallsService(toolCalls, { parallel: true })
               set({ isExecutingTools: false, pendingToolCalls: [] })
               return results
             } catch (error) {
-              // Ensure state is reset even on unexpected errors
               set({ isExecutingTools: false, pendingToolCalls: [] })
-
-              const message = error instanceof Error ? error.message : 'Tool execution failed'
-              console.error('Tool execution error:', error)
-              toast.error(message)
-
-              // Return error results to allow conversation to continue
-              const now = Date.now()
-              return toolCalls.map((tc): ToolExecutionRecord => ({
-                id: tc.id,
-                toolName: tc.function.name,
-                arguments: {},
-                result: {
-                  success: false,
-                  output: '',
-                  error: message,
-                },
-                startedAt: now,
-                completedAt: now,
-                duration: 0,
-              }))
+              throw error
             }
           },
 

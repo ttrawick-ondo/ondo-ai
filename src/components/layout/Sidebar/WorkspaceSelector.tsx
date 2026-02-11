@@ -10,12 +10,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { useWorkspaces, useActiveWorkspace, useWorkspaceActions, useUIActions } from '@/stores'
+import { useActiveWorkspaceId, useWorkspaceUIActions, useUIActions } from '@/stores'
+import { useWorkspaces, useWorkspace } from '@/lib/queries'
 
 export function WorkspaceSelector() {
-  const workspaces = useWorkspaces()
-  const activeWorkspace = useActiveWorkspace()
-  const { setActiveWorkspace } = useWorkspaceActions()
+  const { data: workspaces = [] } = useWorkspaces('user-1') // TODO: Get from auth
+  const activeWorkspaceId = useActiveWorkspaceId()
+  const { data: activeWorkspace } = useWorkspace(activeWorkspaceId)
+  const { setActiveWorkspace } = useWorkspaceUIActions()
   const { openModal } = useUIActions()
 
   return (

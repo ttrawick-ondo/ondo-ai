@@ -23,20 +23,33 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Separator } from '@/components/ui/separator'
 import {
-  usePromptById,
-  usePromptActions,
+  usePromptUIActions,
+  useFavoriteIds,
   useChatActions,
 } from '@/stores'
+import {
+  usePrompt,
+  useDeletePrompt,
+  useDuplicatePrompt,
+  useIncrementPromptUsage,
+} from '@/lib/queries'
 
 export default function PromptDetailPage() {
   const params = useParams()
   const router = useRouter()
   const promptId = params.promptId as string
-  const prompt = usePromptById(promptId)
-  const { toggleFavorite, duplicatePrompt, deletePrompt, incrementUsage } = usePromptActions()
+  const { data: promptData } = usePrompt(promptId)
+  const favoriteIds = useFavoriteIds()
+  const { toggleFavorite } = usePromptUIActions()
+  const deletePromptMutation = useDeletePrompt()
+  const duplicatePromptMutation = useDuplicatePrompt()
+  const incrementUsageMutation = useIncrementPromptUsage()
   const { createConversation, setActiveConversation, sendMessage } = useChatActions()
   const [copied, setCopied] = useState(false)
   const [variableValues, setVariableValues] = useState<Record<string, string>>({})
+
+  // Add isFavorite based on local favorites
+  const prompt = promptData ? { ...promptData, isFavorite: favoriteIds.has(promptData.id) } : null
 
   if (!prompt) {
     return (
@@ -68,10 +81,11 @@ export default function PromptDetailPage() {
   }
 
   const handleUse = async () => {
+    if (!prompt) return
     const content = getCompiledPrompt()
     const id = await createConversation(prompt.title)
     setActiveConversation(id)
-    incrementUsage(prompt.id)
+    incrementUsageMutation.mutate(prompt.id)
     router.push(`/chat/${id}`)
     // Send the prompt as the first message
     setTimeout(() => {
@@ -80,8 +94,14 @@ export default function PromptDetailPage() {
   }
 
   const handleDelete = () => {
-    deletePrompt(prompt.id)
+    if (!prompt) return
+    deletePromptMutation.mutate(prompt.id)
     router.push('/prompts')
+  }
+
+  const handleDuplicate = () => {
+    if (!prompt) return
+    duplicatePromptMutation.mutate({ promptId: prompt.id, userId: 'user-1' })
   }
 
   const getCompiledPrompt = () => {
@@ -138,7 +158,7 @@ export default function PromptDetailPage() {
             <Button
               variant="outline"
               size="icon"
-              onClick={() => duplicatePrompt(prompt.id)}
+              onClick={handleDuplicate}
             >
               <Copy className="h-4 w-4" />
             </Button>

@@ -23,9 +23,9 @@ import {
   useUIActions,
   useConversations,
   useProjects,
-  usePrompts,
   useChatActions,
 } from '@/stores'
+import { usePrompts as usePromptsQuery } from '@/lib/queries'
 
 export function CommandPalette() {
   const router = useRouter()
@@ -33,7 +33,7 @@ export function CommandPalette() {
   const { setCommandPaletteOpen } = useUIActions()
   const conversations = useConversations()
   const projects = useProjects()
-  const prompts = usePrompts()
+  const { data: prompts = [] } = usePromptsQuery({ userId: 'user-1' }) // TODO: Get from auth
   const { createConversation, setActiveConversation } = useChatActions()
 
   const handleSelect = (callback: () => void) => {

@@ -8,14 +8,16 @@ import { AgentCard, EditAgentDialog, DeleteAgentDialog } from '@/components/agen
 import { GleanAgentCreator, GleanAgentTestPanel } from '@/components/model'
 import {
   useGleanAgents,
-  useActiveWorkspace,
+  useActiveWorkspaceId,
   useModelActions,
   useUIActions,
 } from '@/stores'
+import { useWorkspace } from '@/lib/queries'
 import type { GleanAgentConfig, AgentPreviewConfig } from '@/types'
 
 export default function AgentsPage() {
-  const workspace = useActiveWorkspace()
+  const activeWorkspaceId = useActiveWorkspaceId()
+  const { data: workspace } = useWorkspace(activeWorkspaceId)
   const agents = useGleanAgents(workspace?.id || '')
   const { loadGleanAgents } = useModelActions()
   const { openModal } = useUIActions()

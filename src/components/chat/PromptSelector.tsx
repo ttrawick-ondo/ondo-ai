@@ -21,15 +21,18 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
-import { usePrompts, useFavoritePrompts, usePromptActions } from '@/stores'
+import { usePromptUIActions, useFavoriteIds } from '@/stores'
+import { usePrompts as usePromptsQuery, useIncrementPromptUsage } from '@/lib/queries'
 import type { Prompt, PromptVariable } from '@/types'
 
 interface PromptSelectorProps {
   onSelect: (content: string, promptName: string) => void
   disabled?: boolean
+  userId?: string
+  workspaceId?: string
 }
 
-export function PromptSelector({ onSelect, disabled }: PromptSelectorProps) {
+export function PromptSelector({ onSelect, disabled, userId = 'user-1', workspaceId }: PromptSelectorProps) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [activeTab, setActiveTab] = useState<'all' | 'favorites' | 'recent'>('all')
@@ -37,17 +40,29 @@ export function PromptSelector({ onSelect, disabled }: PromptSelectorProps) {
   const [variableValues, setVariableValues] = useState<Record<string, string>>({})
   const [editedContent, setEditedContent] = useState('')
 
-  const allPrompts = usePrompts()
-  const favoritePrompts = useFavoritePrompts()
-  const { incrementUsage } = usePromptActions()
+  const { data: allPrompts = [] } = usePromptsQuery({ userId, workspaceId })
+  const favoriteIds = useFavoriteIds()
+  const { isFavorite } = usePromptUIActions()
+  const incrementUsageMutation = useIncrementPromptUsage()
+
+  // Add isFavorite to prompts based on local favorites
+  const promptsWithFavorites = useMemo(() =>
+    allPrompts.map(p => ({ ...p, isFavorite: favoriteIds.has(p.id) })),
+    [allPrompts, favoriteIds]
+  )
+
+  const favoritePrompts = useMemo(() =>
+    promptsWithFavorites.filter(p => p.isFavorite),
+    [promptsWithFavorites]
+  )
 
   // Sort prompts by usage count for "recent" tab
   const recentPrompts = useMemo(() => {
-    return [...allPrompts]
+    return [...promptsWithFavorites]
       .filter(p => p.usageCount > 0)
       .sort((a, b) => b.usageCount - a.usageCount)
       .slice(0, 10)
-  }, [allPrompts])
+  }, [promptsWithFavorites])
 
   // Filter prompts based on search and active tab
   const filteredPrompts = useMemo(() => {
@@ -61,7 +76,7 @@ export function PromptSelector({ onSelect, disabled }: PromptSelectorProps) {
         prompts = recentPrompts
         break
       default:
-        prompts = allPrompts
+        prompts = promptsWithFavorites
     }
 
     if (!search.trim()) return prompts
@@ -73,7 +88,7 @@ export function PromptSelector({ onSelect, disabled }: PromptSelectorProps) {
         p.description?.toLowerCase().includes(query) ||
         p.tags.some(t => t.toLowerCase().includes(query))
     )
-  }, [allPrompts, favoritePrompts, recentPrompts, activeTab, search])
+  }, [promptsWithFavorites, favoritePrompts, recentPrompts, activeTab, search])
 
   const handlePromptClick = (prompt: Prompt) => {
     setSelectedPrompt(prompt)
@@ -98,7 +113,7 @@ export function PromptSelector({ onSelect, disabled }: PromptSelectorProps) {
     })
 
     onSelect(finalContent, selectedPrompt.title)
-    incrementUsage(selectedPrompt.id)
+    incrementUsageMutation.mutate(selectedPrompt.id)
     closePreview()
   }
 
