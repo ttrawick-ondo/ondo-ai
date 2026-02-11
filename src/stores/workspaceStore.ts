@@ -1,187 +1,269 @@
 import { useMemo } from 'react'
 import { create } from 'zustand'
-import { devtools } from 'zustand/middleware'
+import { devtools, persist } from 'zustand/middleware'
+import { toast } from 'sonner'
 import type { Workspace, WorkspaceMember, CreateWorkspaceInput, UpdateWorkspaceInput, WorkspaceRole } from '@/types'
-import { mockWorkspaces, mockWorkspaceMembers, mockUsers } from '@/lib/mocks/data'
-import { generateId } from '@/lib/utils'
+import { workspaceApi } from '@/lib/api/client/workspaces'
 
 interface WorkspaceState {
   workspaces: Record<string, Workspace>
   activeWorkspaceId: string | null
   membersByWorkspace: Record<string, WorkspaceMember[]>
   isLoading: boolean
+  isSyncing: boolean
+  isInitialized: boolean
 }
 
 interface WorkspaceActions {
   setActiveWorkspace: (id: string | null) => void
-  createWorkspace: (input: CreateWorkspaceInput) => Workspace
-  updateWorkspace: (id: string, input: UpdateWorkspaceInput) => void
-  deleteWorkspace: (id: string) => void
-  inviteMember: (workspaceId: string, email: string, role: WorkspaceRole) => void
-  updateMemberRole: (workspaceId: string, memberId: string, role: WorkspaceRole) => void
-  removeMember: (workspaceId: string, memberId: string) => void
-  loadWorkspaces: () => void
+  createWorkspace: (input: CreateWorkspaceInput) => Promise<Workspace>
+  updateWorkspace: (id: string, input: UpdateWorkspaceInput) => Promise<void>
+  deleteWorkspace: (id: string) => Promise<void>
+  inviteMember: (workspaceId: string, email: string, role: WorkspaceRole) => Promise<void>
+  updateMemberRole: (workspaceId: string, userId: string, role: WorkspaceRole) => Promise<void>
+  removeMember: (workspaceId: string, userId: string) => Promise<void>
+  loadWorkspaces: (userId: string) => Promise<void>
+  loadWorkspaceMembers: (workspaceId: string) => Promise<void>
 }
 
 type WorkspaceStore = WorkspaceState & { actions: WorkspaceActions }
 
-// Convert arrays to records
-const workspacesRecord = mockWorkspaces.reduce((acc, ws) => {
-  acc[ws.id] = ws
-  return acc
-}, {} as Record<string, Workspace>)
-
-const membersByWorkspaceRecord = mockWorkspaceMembers.reduce((acc, member) => {
-  if (!acc[member.workspaceId]) {
-    acc[member.workspaceId] = []
-  }
-  acc[member.workspaceId].push(member)
-  return acc
-}, {} as Record<string, WorkspaceMember[]>)
-
 export const useWorkspaceStore = create<WorkspaceStore>()(
   devtools(
-    (set, get) => ({
-      workspaces: workspacesRecord,
-      activeWorkspaceId: 'ws-1', // Default to Engineering workspace
-      membersByWorkspace: membersByWorkspaceRecord,
-      isLoading: false,
+    persist(
+      (set, get) => ({
+        workspaces: {},
+        activeWorkspaceId: null,
+        membersByWorkspace: {},
+        isLoading: false,
+        isSyncing: false,
+        isInitialized: false,
 
-      actions: {
-        setActiveWorkspace: (id) => {
-          set({ activeWorkspaceId: id })
-        },
+        actions: {
+          setActiveWorkspace: (id) => {
+            set({ activeWorkspaceId: id })
+          },
 
-        createWorkspace: (input) => {
-          const id = `ws-${generateId()}`
-          const now = new Date()
+          createWorkspace: async (input) => {
+            set({ isSyncing: true })
 
-          const workspace: Workspace = {
-            id,
-            name: input.name,
-            description: input.description,
-            ownerId: 'user-1',
-            memberCount: 1,
-            createdAt: now,
-            updatedAt: now,
-          }
+            try {
+              const workspace = await workspaceApi.createWorkspace({
+                name: input.name,
+                description: input.description,
+                ownerId: 'user-1', // TODO: Get from auth
+              })
 
-          // Create owner membership
-          const ownerMember: WorkspaceMember = {
-            id: `wm-${generateId()}`,
-            workspaceId: id,
-            userId: 'user-1',
-            user: mockUsers[0],
-            role: 'owner',
-            joinedAt: now,
-          }
+              set((state) => ({
+                workspaces: { ...state.workspaces, [workspace.id]: workspace },
+                isSyncing: false,
+              }))
 
-          set((state) => ({
-            workspaces: { ...state.workspaces, [id]: workspace },
-            membersByWorkspace: {
-              ...state.membersByWorkspace,
-              [id]: [ownerMember],
-            },
-          }))
-
-          return workspace
-        },
-
-        updateWorkspace: (id, input) => {
-          set((state) => ({
-            workspaces: {
-              ...state.workspaces,
-              [id]: {
-                ...state.workspaces[id],
-                ...input,
-                updatedAt: new Date(),
-              },
-            },
-          }))
-        },
-
-        deleteWorkspace: (id) => {
-          set((state) => {
-            const { [id]: _, ...workspaces } = state.workspaces
-            const { [id]: __, ...membersByWorkspace } = state.membersByWorkspace
-            return {
-              workspaces,
-              membersByWorkspace,
-              activeWorkspaceId: state.activeWorkspaceId === id ? null : state.activeWorkspaceId,
+              return workspace
+            } catch (error) {
+              set({ isSyncing: false })
+              const message = error instanceof Error ? error.message : 'Failed to create workspace'
+              toast.error(message)
+              throw error
             }
-          })
-        },
+          },
 
-        inviteMember: (workspaceId, email, role) => {
-          // In a real app, this would send an invitation
-          // For mock, we'll just add a placeholder member
-          const newMember: WorkspaceMember = {
-            id: `wm-${generateId()}`,
-            workspaceId,
-            userId: `user-${generateId()}`,
-            user: {
-              id: `user-${generateId()}`,
-              email,
-              name: email.split('@')[0],
-              createdAt: new Date(),
-              updatedAt: new Date(),
-            },
-            role,
-            joinedAt: new Date(),
-          }
+          updateWorkspace: async (id, input) => {
+            const existing = get().workspaces[id]
+            if (!existing) return
 
-          set((state) => ({
-            membersByWorkspace: {
-              ...state.membersByWorkspace,
-              [workspaceId]: [...(state.membersByWorkspace[workspaceId] || []), newMember],
-            },
-            workspaces: {
-              ...state.workspaces,
-              [workspaceId]: {
-                ...state.workspaces[workspaceId],
-                memberCount: state.workspaces[workspaceId].memberCount + 1,
+            // Optimistic update
+            set((state) => ({
+              workspaces: {
+                ...state.workspaces,
+                [id]: { ...existing, ...input, updatedAt: new Date() },
               },
-            },
-          }))
-        },
+              isSyncing: true,
+            }))
 
-        updateMemberRole: (workspaceId, memberId, role) => {
-          set((state) => ({
-            membersByWorkspace: {
-              ...state.membersByWorkspace,
-              [workspaceId]: state.membersByWorkspace[workspaceId].map((m) =>
-                m.id === memberId ? { ...m, role } : m
-              ),
-            },
-          }))
-        },
+            try {
+              await workspaceApi.updateWorkspace(id, input)
+              set({ isSyncing: false })
+            } catch (error) {
+              // Rollback
+              set((state) => ({
+                workspaces: { ...state.workspaces, [id]: existing },
+                isSyncing: false,
+              }))
+              const message = error instanceof Error ? error.message : 'Failed to update workspace'
+              toast.error(message)
+              throw error
+            }
+          },
 
-        removeMember: (workspaceId, memberId) => {
-          set((state) => ({
-            membersByWorkspace: {
-              ...state.membersByWorkspace,
-              [workspaceId]: state.membersByWorkspace[workspaceId].filter(
-                (m) => m.id !== memberId
-              ),
-            },
-            workspaces: {
-              ...state.workspaces,
-              [workspaceId]: {
-                ...state.workspaces[workspaceId],
-                memberCount: state.workspaces[workspaceId].memberCount - 1,
+          deleteWorkspace: async (id) => {
+            const existing = get().workspaces[id]
+            const existingMembers = get().membersByWorkspace[id]
+            if (!existing) return
+
+            // Optimistic delete
+            set((state) => {
+              const { [id]: _, ...workspaces } = state.workspaces
+              const { [id]: __, ...membersByWorkspace } = state.membersByWorkspace
+              return {
+                workspaces,
+                membersByWorkspace,
+                activeWorkspaceId: state.activeWorkspaceId === id ? null : state.activeWorkspaceId,
+                isSyncing: true,
+              }
+            })
+
+            try {
+              await workspaceApi.deleteWorkspace(id)
+              set({ isSyncing: false })
+            } catch (error) {
+              // Rollback
+              set((state) => ({
+                workspaces: { ...state.workspaces, [id]: existing },
+                membersByWorkspace: { ...state.membersByWorkspace, [id]: existingMembers || [] },
+                isSyncing: false,
+              }))
+              const message = error instanceof Error ? error.message : 'Failed to delete workspace'
+              toast.error(message)
+              throw error
+            }
+          },
+
+          inviteMember: async (workspaceId, _email, role) => {
+            // TODO: Implement invitation system with email
+            // For now, this is a placeholder - real implementation would:
+            // 1. Call API to create invitation
+            // 2. Send email to invitee
+            // 3. Update UI when invitation is accepted
+            toast.info('Invitation system coming soon')
+          },
+
+          updateMemberRole: async (workspaceId, userId, role) => {
+            const members = get().membersByWorkspace[workspaceId] || []
+            const existingMember = members.find((m) => m.userId === userId)
+            if (!existingMember) return
+
+            // Optimistic update
+            set((state) => ({
+              membersByWorkspace: {
+                ...state.membersByWorkspace,
+                [workspaceId]: members.map((m) =>
+                  m.userId === userId ? { ...m, role } : m
+                ),
               },
-            },
-          }))
-        },
+              isSyncing: true,
+            }))
 
-        loadWorkspaces: () => {
-          set({ isLoading: true })
-          setTimeout(() => {
-            set({ isLoading: false })
-          }, 500)
+            try {
+              await workspaceApi.updateMemberRole(workspaceId, userId, role)
+              set({ isSyncing: false })
+            } catch (error) {
+              // Rollback
+              set((state) => ({
+                membersByWorkspace: {
+                  ...state.membersByWorkspace,
+                  [workspaceId]: members,
+                },
+                isSyncing: false,
+              }))
+              const message = error instanceof Error ? error.message : 'Failed to update member role'
+              toast.error(message)
+              throw error
+            }
+          },
+
+          removeMember: async (workspaceId, userId) => {
+            const members = get().membersByWorkspace[workspaceId] || []
+            const workspace = get().workspaces[workspaceId]
+
+            // Optimistic update
+            set((state) => ({
+              membersByWorkspace: {
+                ...state.membersByWorkspace,
+                [workspaceId]: members.filter((m) => m.userId !== userId),
+              },
+              workspaces: workspace
+                ? {
+                    ...state.workspaces,
+                    [workspaceId]: {
+                      ...workspace,
+                      memberCount: workspace.memberCount - 1,
+                    },
+                  }
+                : state.workspaces,
+              isSyncing: true,
+            }))
+
+            try {
+              await workspaceApi.removeMember(workspaceId, userId)
+              set({ isSyncing: false })
+            } catch (error) {
+              // Rollback
+              set((state) => ({
+                membersByWorkspace: {
+                  ...state.membersByWorkspace,
+                  [workspaceId]: members,
+                },
+                workspaces: workspace
+                  ? { ...state.workspaces, [workspaceId]: workspace }
+                  : state.workspaces,
+                isSyncing: false,
+              }))
+              const message = error instanceof Error ? error.message : 'Failed to remove member'
+              toast.error(message)
+              throw error
+            }
+          },
+
+          loadWorkspaces: async (userId) => {
+            set({ isLoading: true })
+            try {
+              const workspaces = await workspaceApi.getUserWorkspaces(userId)
+
+              const workspacesRecord = workspaces.reduce((acc, ws) => {
+                acc[ws.id] = ws
+                return acc
+              }, {} as Record<string, Workspace>)
+
+              set({
+                workspaces: workspacesRecord,
+                isLoading: false,
+                isInitialized: true,
+                // Set first workspace as active if none selected
+                activeWorkspaceId: get().activeWorkspaceId || workspaces[0]?.id || null,
+              })
+            } catch (error) {
+              set({ isLoading: false })
+              const message = error instanceof Error ? error.message : 'Failed to load workspaces'
+              toast.error(message)
+            }
+          },
+
+          loadWorkspaceMembers: async (workspaceId) => {
+            try {
+              const members = await workspaceApi.getMembers(workspaceId)
+
+              set((state) => ({
+                membersByWorkspace: {
+                  ...state.membersByWorkspace,
+                  [workspaceId]: members,
+                },
+              }))
+            } catch (error) {
+              const message = error instanceof Error ? error.message : 'Failed to load members'
+              toast.error(message)
+            }
+          },
         },
-      },
-    }),
+      }),
+      {
+        name: 'workspace-store',
+        partialize: (state) => ({
+          // Only persist the active workspace ID
+          activeWorkspaceId: state.activeWorkspaceId,
+        }),
+      }
+    ),
     { name: 'workspace-store' }
   )
 )

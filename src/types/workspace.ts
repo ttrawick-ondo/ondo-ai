@@ -5,6 +5,7 @@ export type WorkspaceRole = 'owner' | 'admin' | 'member' | 'viewer'
 export interface Workspace {
   id: string
   name: string
+  slug?: string
   description?: string
   logoUrl?: string
   ownerId: string

@@ -41,6 +41,7 @@ export interface CreatePromptInput {
   tags?: string[]
   visibility: PromptVisibility
   workspaceId?: string
+  userId?: string
 }
 
 export interface UpdatePromptInput {

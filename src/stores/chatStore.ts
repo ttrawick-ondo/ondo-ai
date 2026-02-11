@@ -32,7 +32,7 @@ interface ChatActions {
   createConversation: (title?: string, projectId?: string, modelId?: string, folderId?: string | null) => Promise<string>
   deleteConversation: (id: string) => Promise<void>
   updateConversationTitle: (id: string, title: string) => Promise<void>
-  updateConversationModel: (id: string, modelId: string) => void
+  updateConversationModel: (id: string, modelId: string) => Promise<void>
   sendMessage: (input: SendMessageInput) => Promise<void>
   clearConversation: (id: string) => void
   loadConversations: (conversations: Conversation[]) => void
@@ -214,13 +214,31 @@ export const useChatStore = create<ChatStore>()(
             }
           },
 
-          updateConversationModel: (id, modelId) => {
+          updateConversationModel: async (id, modelId) => {
+            const existing = get().conversations[id]
+            if (!existing) return
+
+            // Optimistic update
             set((state) => ({
               conversations: {
                 ...state.conversations,
                 [id]: { ...state.conversations[id], modelId, updatedAt: new Date() },
               },
+              isSyncing: true,
             }))
+
+            try {
+              await conversationApi.updateConversation(id, { model: modelId })
+              set({ isSyncing: false })
+            } catch (error) {
+              // Rollback on failure
+              set((state) => ({
+                conversations: { ...state.conversations, [id]: existing },
+                isSyncing: false,
+              }))
+              const message = error instanceof Error ? error.message : 'Failed to update model'
+              toast.error(message)
+            }
           },
 
           sendMessage: async (input) => {
@@ -717,16 +735,61 @@ export const useChatStore = create<ChatStore>()(
           executeToolCalls: async (toolCalls: ToolCall[]) => {
             set({ isExecutingTools: true, pendingToolCalls: toolCalls })
 
-            const parsedCalls = toolCalls.map((tc) => ({
-              id: tc.id,
-              name: tc.function.name,
-              arguments: JSON.parse(tc.function.arguments),
-            }))
+            try {
+              // Parse tool call arguments with error handling
+              const parsedCalls = toolCalls.map((tc) => {
+                let parsedArgs: Record<string, unknown>
+                try {
+                  parsedArgs = JSON.parse(tc.function.arguments)
+                } catch (parseError) {
+                  console.error(`Failed to parse arguments for tool ${tc.function.name}:`, parseError)
+                  toast.error(`Invalid arguments for tool "${tc.function.name}"`)
+                  // Return a placeholder that will fail gracefully
+                  parsedArgs = {}
+                }
 
-            const results = await toolRegistry.executeToolCalls(parsedCalls, { parallel: true })
+                // Validate that parsedArgs is an object
+                if (typeof parsedArgs !== 'object' || parsedArgs === null) {
+                  console.error(`Invalid argument type for tool ${tc.function.name}: expected object`)
+                  toast.error(`Invalid argument format for tool "${tc.function.name}"`)
+                  parsedArgs = {}
+                }
 
-            set({ isExecutingTools: false, pendingToolCalls: [] })
-            return results
+                return {
+                  id: tc.id,
+                  name: tc.function.name,
+                  arguments: parsedArgs,
+                }
+              })
+
+              const results = await toolRegistry.executeToolCalls(parsedCalls, { parallel: true })
+
+              set({ isExecutingTools: false, pendingToolCalls: [] })
+              return results
+            } catch (error) {
+              // Ensure state is reset even on unexpected errors
+              set({ isExecutingTools: false, pendingToolCalls: [] })
+
+              const message = error instanceof Error ? error.message : 'Tool execution failed'
+              console.error('Tool execution error:', error)
+              toast.error(message)
+
+              // Return error results to allow conversation to continue
+              const now = Date.now()
+              return toolCalls.map((tc): ToolExecutionRecord => ({
+                id: tc.id,
+                toolName: tc.function.name,
+                arguments: {},
+                result: {
+                  success: false,
+                  output: '',
+                  error: message,
+                },
+                startedAt: now,
+                completedAt: now,
+                duration: 0,
+              }))
+            }
           },
 
           moveConversationToFolder: async (conversationId, folderId, projectId) => {

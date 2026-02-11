@@ -1,7 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Loader2, FlaskConical } from 'lucide-react'
+import { ExternalLink, Sparkles } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -11,263 +10,70 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { Switch } from '@/components/ui/switch'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { GleanAgentTestPanel } from './GleanAgentTestPanel'
 import {
   useActiveModal,
   useUIActions,
-  useModelActions,
-  useGleanDataSources,
-  useActiveWorkspace,
 } from '@/stores'
-import type { GleanDataSource, AgentPreviewConfig } from '@/types'
+
+// Glean Agent Builder URL - users create agents directly in Glean's UI
+const GLEAN_AGENT_BUILDER_URL = 'https://app.glean.com/admin/platform/agents'
 
 export function GleanAgentCreator() {
   const activeModal = useActiveModal()
   const { closeModal } = useUIActions()
-  const { createGleanAgent, loadGleanDataSources } = useModelActions()
-  const dataSources = useGleanDataSources()
-  const workspace = useActiveWorkspace()
-
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
-  const [systemPrompt, setSystemPrompt] = useState('')
-  const [temperature, setTemperature] = useState(0.7)
-  const [selectedDataSources, setSelectedDataSources] = useState<string[]>([])
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [isTestPanelOpen, setIsTestPanelOpen] = useState(false)
 
   const isOpen = activeModal === 'create-glean-agent'
 
-  // Build preview config for testing
-  const previewConfig: AgentPreviewConfig = {
-    name: name.trim() || 'Untitled Agent',
-    description: description.trim() || undefined,
-    systemPrompt: systemPrompt.trim(),
-    dataSourceIds: selectedDataSources,
-    temperature,
-    isDraft: true,
-  }
-
-  useEffect(() => {
-    if (isOpen) {
-      loadGleanDataSources()
-    }
-  }, [isOpen, loadGleanDataSources])
-
-  const handleDataSourceToggle = (dataSourceId: string) => {
-    setSelectedDataSources((prev) =>
-      prev.includes(dataSourceId)
-        ? prev.filter((id) => id !== dataSourceId)
-        : [...prev, dataSourceId]
-    )
-  }
-
-  const handleSubmit = async () => {
-    if (!name.trim()) {
-      setError('Name is required')
-      return
-    }
-
-    if (!systemPrompt.trim()) {
-      setError('System prompt is required')
-      return
-    }
-
-    if (!workspace) {
-      setError('No workspace selected')
-      return
-    }
-
-    setIsSubmitting(true)
-    setError(null)
-
-    try {
-      await createGleanAgent(workspace.id, {
-        name: name.trim(),
-        description: description.trim() || undefined,
-        systemPrompt: systemPrompt.trim(),
-        dataSourceIds: selectedDataSources,
-        temperature,
-      })
-
-      // Reset form and close modal
-      setName('')
-      setDescription('')
-      setSystemPrompt('')
-      setTemperature(0.7)
-      setSelectedDataSources([])
-      closeModal()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create agent')
-    } finally {
-      setIsSubmitting(false)
-    }
+  const handleOpenGlean = () => {
+    window.open(GLEAN_AGENT_BUILDER_URL, '_blank', 'noopener,noreferrer')
+    closeModal()
   }
 
   const handleClose = () => {
-    if (!isSubmitting) {
-      closeModal()
-    }
+    closeModal()
   }
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Create Glean Agent</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-primary" />
+            Create Glean Agent
+          </DialogTitle>
           <DialogDescription>
-            Create a custom Glean agent with specific data sources and behavior.
+            Glean Agents are created and managed in the Glean Admin Console.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-4">
-          {error && (
-            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-              {error}
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <label htmlFor="name" className="text-sm font-medium">
-              Name
-            </label>
-            <Input
-              id="name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g., Engineering Docs Assistant"
-              disabled={isSubmitting}
-            />
+          <div className="rounded-lg border bg-muted/50 p-4 space-y-3">
+            <h4 className="font-medium text-sm">To create a Glean Agent:</h4>
+            <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
+              <li>Open the Glean Agent Builder</li>
+              <li>Configure your agent&apos;s name and description</li>
+              <li>Select data sources and permissions</li>
+              <li>Set up the system prompt and behavior</li>
+              <li>Test and publish your agent</li>
+            </ol>
           </div>
 
-          <div className="space-y-2">
-            <label htmlFor="description" className="text-sm font-medium">
-              Description (optional)
-            </label>
-            <Input
-              id="description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Brief description of what this agent does"
-              disabled={isSubmitting}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label htmlFor="systemPrompt" className="text-sm font-medium">
-              System Prompt
-            </label>
-            <Textarea
-              id="systemPrompt"
-              value={systemPrompt}
-              onChange={(e) => setSystemPrompt(e.target.value)}
-              placeholder="You are a helpful assistant that specializes in..."
-              rows={4}
-              disabled={isSubmitting}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">
-              Temperature: {temperature.toFixed(1)}
-            </label>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.1"
-              value={temperature}
-              onChange={(e) => setTemperature(parseFloat(e.target.value))}
-              className="w-full"
-              disabled={isSubmitting}
-            />
-            <p className="text-xs text-muted-foreground">
-              Lower values make responses more focused, higher values more creative.
-            </p>
-          </div>
-
-          {dataSources.length > 0 && (
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Data Sources</label>
-              <ScrollArea className="h-[150px] rounded-md border p-2">
-                <div className="space-y-2">
-                  {dataSources.map((ds) => (
-                    <DataSourceItem
-                      key={ds.id}
-                      dataSource={ds}
-                      isSelected={selectedDataSources.includes(ds.id)}
-                      onToggle={() => handleDataSourceToggle(ds.id)}
-                      disabled={isSubmitting}
-                    />
-                  ))}
-                </div>
-              </ScrollArea>
-            </div>
-          )}
+          <p className="text-sm text-muted-foreground">
+            Once created, your agent will automatically appear in Ondo AI&apos;s model
+            selector when you refresh the page.
+          </p>
         </div>
 
         <DialogFooter className="flex-col sm:flex-row gap-2">
-          <Button
-            variant="outline"
-            onClick={() => setIsTestPanelOpen(true)}
-            disabled={isSubmitting || !systemPrompt.trim()}
-            className="w-full sm:w-auto"
-          >
-            <FlaskConical className="mr-2 h-4 w-4" />
-            Test Agent
+          <Button variant="outline" onClick={handleClose} className="w-full sm:w-auto">
+            Cancel
           </Button>
-          <div className="flex gap-2 w-full sm:w-auto">
-            <Button variant="outline" onClick={handleClose} disabled={isSubmitting} className="flex-1 sm:flex-none">
-              Cancel
-            </Button>
-            <Button onClick={handleSubmit} disabled={isSubmitting} className="flex-1 sm:flex-none">
-              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Create Agent
-            </Button>
-          </div>
+          <Button onClick={handleOpenGlean} className="w-full sm:w-auto">
+            <ExternalLink className="mr-2 h-4 w-4" />
+            Open Glean Agent Builder
+          </Button>
         </DialogFooter>
       </DialogContent>
-
-      {/* Test Panel */}
-      <GleanAgentTestPanel
-        isOpen={isTestPanelOpen}
-        onClose={() => setIsTestPanelOpen(false)}
-        config={previewConfig}
-      />
     </Dialog>
-  )
-}
-
-interface DataSourceItemProps {
-  dataSource: GleanDataSource
-  isSelected: boolean
-  onToggle: () => void
-  disabled: boolean
-}
-
-function DataSourceItem({
-  dataSource,
-  isSelected,
-  onToggle,
-  disabled,
-}: DataSourceItemProps) {
-  return (
-    <div
-      className="flex items-center justify-between rounded-md border p-2"
-      onClick={disabled ? undefined : onToggle}
-    >
-      <div className="flex flex-col">
-        <span className="text-sm font-medium">{dataSource.name}</span>
-        <span className="text-xs text-muted-foreground capitalize">
-          {dataSource.type}
-        </span>
-      </div>
-      <Switch checked={isSelected} disabled={disabled} />
-    </div>
   )
 }
