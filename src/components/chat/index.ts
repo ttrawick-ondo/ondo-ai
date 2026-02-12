@@ -1,4 +1,5 @@
 export { ChatContainer } from './ChatContainer'
+export { BranchTabs } from './BranchTabs'
 export { MessageList } from './MessageList'
 export { MessageBubble } from './MessageBubble'
 export { ChatInput } from './ChatInput'

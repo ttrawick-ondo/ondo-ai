@@ -74,7 +74,7 @@ export function ConversationItem({
     <div
       ref={setNodeRef}
       className={cn(
-        'group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer transition-colors',
+        'group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer transition-colors overflow-hidden',
         isSelected
           ? 'bg-secondary text-secondary-foreground'
           : 'hover:bg-muted text-muted-foreground hover:text-foreground',
@@ -101,10 +101,10 @@ export function ConversationItem({
       </div>
 
       {/* Title and time */}
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 overflow-hidden">
         <div className="truncate font-medium">{conversation.title}</div>
         {showTime && (
-          <div className="text-xs text-muted-foreground">
+          <div className="text-xs text-muted-foreground truncate">
             {formatRelativeTime(conversation.lastMessageAt)}
           </div>
         )}
@@ -117,8 +117,8 @@ export function ConversationItem({
             variant="ghost"
             size="icon"
             className={cn(
-              'h-6 w-6 shrink-0 transition-opacity',
-              isHovered ? 'opacity-100' : 'opacity-0'
+              'h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity',
+              isSelected && 'opacity-70'
             )}
             onClick={(e) => e.stopPropagation()}
           >

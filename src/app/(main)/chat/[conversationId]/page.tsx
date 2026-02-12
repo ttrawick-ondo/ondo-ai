@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { ChatContainer } from '@/components/chat'
 import { useChatStore, useChatActions, useChatLoading, useConversationsInitialized } from '@/stores'
 import { conversationApi } from '@/lib/api/client/conversations'
@@ -9,7 +9,9 @@ import { conversationApi } from '@/lib/api/client/conversations'
 export default function ConversationPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const conversationId = params.conversationId as string
+  const initialBranchId = searchParams.get('branch')
   const [fetchError, setFetchError] = useState(false)
   const [isFetchingConversation, setIsFetchingConversation] = useState(false)
 
@@ -87,5 +89,5 @@ export default function ConversationPage() {
     )
   }
 
-  return <ChatContainer conversationId={conversationId} />
+  return <ChatContainer conversationId={conversationId} initialBranchId={initialBranchId} />
 }

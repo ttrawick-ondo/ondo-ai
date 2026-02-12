@@ -128,6 +128,7 @@ export interface BranchConversationInput {
 
 export interface SendMessageInput {
   content: string
+  conversationId?: string // Optional: defaults to activeConversationId
   attachments?: Omit<Attachment, 'id'>[]
   promptId?: string
   modelId?: string

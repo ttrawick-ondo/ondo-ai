@@ -135,6 +135,7 @@ export function ChatInput({ conversationId }: ChatInputProps) {
 
     await sendMessage({
       content: finalContent,
+      conversationId,
       modelId: selectedModelId,
       attachments: allAttachments.length > 0 ? allAttachments : undefined,
     })

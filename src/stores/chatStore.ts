@@ -55,6 +55,7 @@ interface ChatActions {
   toggleConversationPinned: (id: string) => Promise<void>
   // Branching actions
   branchConversation: (sourceId: string, branchPointMessageId: string, title?: string) => Promise<string>
+  loadBranchConversations: (parentId: string) => Promise<void>
   // Search
   searchConversations: (query: string, projectId?: string) => Conversation[]
 }
@@ -250,49 +251,51 @@ export const useChatStore = create<ChatStore>()(
 
           sendMessage: async (input) => {
             const { activeConversationId, conversations, messagesByConversation, enabledTools } = get()
-            if (!activeConversationId) return
+            // Use provided conversationId or fall back to activeConversationId
+            const targetConversationId = input.conversationId || activeConversationId
+            if (!targetConversationId) return
 
-            const conversation = conversations[activeConversationId]
+            const conversation = conversations[targetConversationId]
             const modelId = input.modelId || conversation.modelId || 'claude-sonnet-4-20250514'
             const provider = getProviderFromModelId(modelId)
 
             // Create and add user message
-            const userMessage = createUserMessage(activeConversationId, input.content, input.attachments)
+            const userMessage = createUserMessage(targetConversationId, input.content, input.attachments)
             const userMessageId = userMessage.id
             const now = new Date()
 
             set((state) => ({
               messagesByConversation: {
                 ...state.messagesByConversation,
-                [activeConversationId]: [
-                  ...(state.messagesByConversation[activeConversationId] || []),
+                [targetConversationId]: [
+                  ...(state.messagesByConversation[targetConversationId] || []),
                   userMessage,
                 ],
               },
               conversations: {
                 ...state.conversations,
-                [activeConversationId]: {
-                  ...state.conversations[activeConversationId],
-                  messageCount: state.conversations[activeConversationId].messageCount + 1,
+                [targetConversationId]: {
+                  ...state.conversations[targetConversationId],
+                  messageCount: state.conversations[targetConversationId].messageCount + 1,
                   lastMessageAt: now,
                   updatedAt: now,
                   title:
-                    state.conversations[activeConversationId].messageCount === 0
+                    state.conversations[targetConversationId].messageCount === 0
                       ? input.content.slice(0, 50) + (input.content.length > 50 ? '...' : '')
-                      : state.conversations[activeConversationId].title,
+                      : state.conversations[targetConversationId].title,
                 },
               },
             }))
 
             // Persist user message to database
-            persistMessage(activeConversationId, userMessage)
+            persistMessage(targetConversationId, userMessage)
               .then((dbId) => {
                 set((state) => {
-                  const messages = state.messagesByConversation[activeConversationId] || []
+                  const messages = state.messagesByConversation[targetConversationId] || []
                   return {
                     messagesByConversation: {
                       ...state.messagesByConversation,
-                      [activeConversationId]: messages.map((msg) =>
+                      [targetConversationId]: messages.map((msg) =>
                         msg.id === userMessageId ? { ...msg, id: dbId } : msg
                       ),
                     },
@@ -304,14 +307,14 @@ export const useChatStore = create<ChatStore>()(
             // Update conversation title if first message
             if (conversation.messageCount === 0) {
               const newTitle = input.content.slice(0, 50) + (input.content.length > 50 ? '...' : '')
-              conversationApi.updateConversation(activeConversationId, { title: newTitle }).catch(console.error)
+              conversationApi.updateConversation(targetConversationId, { title: newTitle }).catch(console.error)
             }
 
             // Start streaming
             set({ isStreaming: true, streamingMessage: '' })
 
             // Build API messages
-            const existingMessages = messagesByConversation[activeConversationId] || []
+            const existingMessages = messagesByConversation[targetConversationId] || []
             const apiMessages = buildApiMessages([...existingMessages, userMessage])
 
             // Get routing options
@@ -321,7 +324,7 @@ export const useChatStore = create<ChatStore>()(
             // Stream the chat
             await streamChat(
               {
-                conversationId: activeConversationId,
+                conversationId: targetConversationId,
                 messages: apiMessages,
                 provider,
                 modelId,
@@ -343,16 +346,16 @@ export const useChatStore = create<ChatStore>()(
                   set((state) => ({
                     messagesByConversation: {
                       ...state.messagesByConversation,
-                      [activeConversationId]: [
-                        ...(state.messagesByConversation[activeConversationId] || []),
+                      [targetConversationId]: [
+                        ...(state.messagesByConversation[targetConversationId] || []),
                         message,
                       ],
                     },
                     conversations: {
                       ...state.conversations,
-                      [activeConversationId]: {
-                        ...state.conversations[activeConversationId],
-                        messageCount: state.conversations[activeConversationId].messageCount + 1,
+                      [targetConversationId]: {
+                        ...state.conversations[targetConversationId],
+                        messageCount: state.conversations[targetConversationId].messageCount + 1,
                         lastMessageAt: new Date(),
                         updatedAt: new Date(),
                       },
@@ -377,7 +380,7 @@ export const useChatStore = create<ChatStore>()(
                   console.error('Chat error:', error)
                   const errorMessage: Message = {
                     id: `msg-${generateId()}`,
-                    conversationId: activeConversationId,
+                    conversationId: targetConversationId,
                     role: 'assistant',
                     content: `Sorry, there was an error processing your request: ${error}`,
                     createdAt: new Date(),
@@ -385,8 +388,8 @@ export const useChatStore = create<ChatStore>()(
                   set((state) => ({
                     messagesByConversation: {
                       ...state.messagesByConversation,
-                      [activeConversationId]: [
-                        ...(state.messagesByConversation[activeConversationId] || []),
+                      [targetConversationId]: [
+                        ...(state.messagesByConversation[targetConversationId] || []),
                         errorMessage,
                       ],
                     },
@@ -474,6 +477,9 @@ export const useChatStore = create<ChatStore>()(
                     }
                   : state.conversations,
               }))
+
+              // Also load branch conversations in the background
+              get().actions.loadBranchConversations(conversationId)
             } catch (error) {
               const message = error instanceof Error ? error.message : 'Failed to load messages'
               toast.error(message)
@@ -709,6 +715,23 @@ export const useChatStore = create<ChatStore>()(
               const message = error instanceof Error ? error.message : 'Failed to branch conversation'
               toast.error(message)
               throw error
+            }
+          },
+
+          loadBranchConversations: async (parentId) => {
+            try {
+              const branches = await conversationApi.getBranches(parentId)
+
+              // Add branches to store (merge with existing)
+              set((state) => ({
+                conversations: {
+                  ...state.conversations,
+                  ...Object.fromEntries(branches.map((b) => [b.id, b])),
+                },
+              }))
+            } catch (error) {
+              console.error('Failed to load branch conversations:', error)
+              // Don't show error toast - branches loading is optional
             }
           },
 

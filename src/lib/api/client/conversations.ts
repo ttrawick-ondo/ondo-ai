@@ -346,6 +346,23 @@ class ConversationApiClient {
     return mapApiResponse(data as ConversationApiResponse)
   }
 
+  /**
+   * Get branches for a conversation
+   */
+  async getBranches(conversationId: string): Promise<Conversation[]> {
+    const response = await fetch(`${API_BASE}/${conversationId}?branches=true`)
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error || 'Failed to fetch branches')
+    }
+
+    const { data } = await response.json()
+    // The response includes branches array when ?branches=true
+    const branches = (data.branches || []) as ConversationApiResponse[]
+    return branches.map(mapApiResponse)
+  }
+
   // ============================================================================
   // Messages
   // ============================================================================
