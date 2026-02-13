@@ -16,7 +16,7 @@ export interface ProjectWithStats extends Project {
 // API response type from the database (uses 'ownerId' instead of 'userId')
 interface ProjectApiResponse {
   id: string
-  workspaceId: string
+  workspaceId: string | null // null = Personal space
   ownerId: string
   name: string
   description?: string | null
@@ -37,7 +37,7 @@ function mapApiResponse(data: ProjectApiResponse): ProjectWithStats {
     description: data.description || undefined,
     color: data.color || PROJECT_COLORS[0],
     icon: data.icon || undefined,
-    workspaceId: data.workspaceId,
+    workspaceId: data.workspaceId ?? undefined, // null -> undefined for frontend
     userId: data.ownerId, // Map ownerId -> userId
     conversationCount: data.conversationCount || 0,
     folderCount: data.folderCount || 0,
@@ -47,7 +47,7 @@ function mapApiResponse(data: ProjectApiResponse): ProjectWithStats {
 }
 
 export interface CreateProjectInput {
-  workspaceId: string
+  workspaceId?: string | null // null = Personal space
   ownerId: string
   name: string
   description?: string
@@ -65,19 +65,49 @@ export interface UpdateProjectInput {
 
 class ProjectApiClient {
   /**
-   * Get all projects for a user
+   * Get ALL projects for a user (no workspace filter)
+   * Used for initial load - selector filters by workspace
    */
-  async getUserProjects(
+  async getAllUserProjects(
     userId: string,
     options?: {
-      workspaceId?: string
       archived?: boolean
       limit?: number
       offset?: number
     }
   ): Promise<ProjectWithStats[]> {
     const params = new URLSearchParams({ userId })
-    if (options?.workspaceId) params.set('workspaceId', options.workspaceId)
+    // Don't set workspaceId - fetch all projects
+    if (options?.archived) params.set('archived', 'true')
+    if (options?.limit) params.set('limit', options.limit.toString())
+    if (options?.offset) params.set('offset', options.offset.toString())
+
+    const response = await fetch(`${API_BASE}?${params}`)
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error || 'Failed to fetch projects')
+    }
+
+    const { data } = await response.json()
+    return (data as ProjectApiResponse[]).map(mapApiResponse)
+  }
+
+  /**
+   * Get projects for a user in a specific workspace
+   */
+  async getUserProjects(
+    userId: string,
+    workspaceId: string | null,
+    options?: {
+      archived?: boolean
+      limit?: number
+      offset?: number
+    }
+  ): Promise<ProjectWithStats[]> {
+    const params = new URLSearchParams({ userId })
+    // Pass 'null' string to indicate Personal space
+    params.set('workspaceId', workspaceId === null ? 'null' : workspaceId)
     if (options?.archived) params.set('archived', 'true')
     if (options?.limit) params.set('limit', options.limit.toString())
     if (options?.offset) params.set('offset', options.offset.toString())

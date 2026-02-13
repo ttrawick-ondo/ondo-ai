@@ -11,7 +11,9 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get('userId')
-    const workspaceId = searchParams.get('workspaceId')
+    const workspaceIdParam = searchParams.get('workspaceId')
+    // 'null' string = Personal space, actual value = workspace, not provided = all
+    const workspaceId = workspaceIdParam === 'null' ? null : workspaceIdParam
     const search = searchParams.get('search')
     const archived = searchParams.get('archived') === 'true'
     const limit = searchParams.get('limit')
@@ -20,19 +22,9 @@ export async function GET(request: NextRequest) {
     // Search mode
     if (search && userId) {
       const projects = await searchProjects(userId, search, {
-        workspaceId: workspaceId || undefined,
+        workspaceId: workspaceId ?? undefined,
         includeArchived: archived,
         limit: limit ? parseInt(limit, 10) : undefined,
-      })
-      return NextResponse.json({ data: projects })
-    }
-
-    // Workspace projects
-    if (workspaceId) {
-      const projects = await getWorkspaceProjects(workspaceId, {
-        archived,
-        limit: limit ? parseInt(limit, 10) : undefined,
-        offset: offset ? parseInt(offset, 10) : undefined,
       })
       return NextResponse.json({ data: projects })
     }
@@ -40,12 +32,14 @@ export async function GET(request: NextRequest) {
     // User projects (requires userId)
     if (!userId) {
       return NextResponse.json(
-        { error: 'userId or workspaceId is required' },
+        { error: 'userId is required' },
         { status: 400 }
       )
     }
 
+    // Filter by workspace if provided (including null for Personal)
     const projects = await getUserProjects(userId, {
+      workspaceId: workspaceIdParam !== null ? workspaceId : undefined,
       archived,
       limit: limit ? parseInt(limit, 10) : undefined,
       offset: offset ? parseInt(offset, 10) : undefined,
@@ -66,15 +60,15 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { workspaceId, ownerId, name, description, color, icon, settings } = body
 
-    if (!workspaceId || !ownerId || !name) {
+    if (!ownerId || !name) {
       return NextResponse.json(
-        { error: 'workspaceId, ownerId, and name are required' },
+        { error: 'ownerId and name are required' },
         { status: 400 }
       )
     }
 
     const project = await createProject({
-      workspaceId,
+      workspaceId: workspaceId ?? null, // null = Personal space
       ownerId,
       name,
       description,

@@ -23,7 +23,7 @@ interface ProjectActions {
   archiveProject: (id: string) => Promise<void>
   unarchiveProject: (id: string) => Promise<void>
   loadProjects: (projects: Project[]) => void
-  fetchUserProjects: (userId: string, workspaceId?: string) => Promise<void>
+  fetchUserProjects: (userId: string) => Promise<void>
   setLoading: (loading: boolean) => void
 }
 
@@ -56,7 +56,7 @@ export const useProjectStore = create<ProjectStore>()(
               color: input.color || PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)],
               icon: input.icon,
               workspaceId: input.workspaceId,
-              userId: 'user-1', // Will be replaced by actual user
+              userId: input.userId,
               conversationCount: 0,
               createdAt: now,
               updatedAt: now,
@@ -70,8 +70,8 @@ export const useProjectStore = create<ProjectStore>()(
             try {
               // Call API - returns ProjectWithStats with userId already mapped
               const project = await projectApi.createProject({
-                workspaceId: input.workspaceId || 'default',
-                ownerId: 'user-1', // TODO: Get from auth context
+                workspaceId: input.workspaceId ?? null, // null = Personal space
+                ownerId: input.userId,
                 name: input.name,
                 description: input.description,
                 color: input.color,
@@ -223,13 +223,15 @@ export const useProjectStore = create<ProjectStore>()(
             set({ projects: projectsRecord, isInitialized: true })
           },
 
-          fetchUserProjects: async (userId, workspaceId) => {
+          fetchUserProjects: async (userId) => {
             set({ isLoading: true })
             try {
-              // API returns ProjectWithStats with userId already mapped
-              const projects = await projectApi.getUserProjects(userId, { workspaceId })
+              // Fetch ALL user projects - the selector filters by workspace
+              // This prevents projects from disappearing when switching workspaces
+              const projects = await projectApi.getAllUserProjects(userId)
               get().actions.loadProjects(projects)
             } catch (error) {
+              console.error('Error fetching projects:', error)
               const message = error instanceof Error ? error.message : 'Failed to load projects'
               toast.error(message)
             } finally {
@@ -255,17 +257,20 @@ export const useProjectStore = create<ProjectStore>()(
 )
 
 // Selector hooks
-// Filter projects by workspace - projects always require a workspace, so Personal space (null) shows no projects
+// Filter projects by workspace (null = Personal space)
 export const useProjects = (workspaceId?: string | null): Project[] => {
   const projects = useProjectStore((state) => state.projects)
   return useMemo(() => {
     const all = Object.values(projects)
     // If workspaceId is undefined, return all projects (legacy behavior)
     if (workspaceId === undefined) return all
-    // If workspaceId is null (Personal space), return no projects since projects require a workspace
-    if (workspaceId === null) return []
-    // Filter by workspace
-    return all.filter((p) => p.workspaceId === workspaceId)
+    // Filter by workspace (including null for Personal space)
+    return all.filter((p) => {
+      const projectWorkspaceId = p.workspaceId ?? null
+      return workspaceId === null
+        ? projectWorkspaceId === null
+        : projectWorkspaceId === workspaceId
+    })
   }, [projects, workspaceId])
 }
 

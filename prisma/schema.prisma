@@ -121,7 +121,7 @@ model WorkspaceInvitation {
 
 model Project {
   id          String   @id @default(cuid())
-  workspaceId String
+  workspaceId String?  // null = Personal space
   ownerId     String
   name        String
   description String?
@@ -133,7 +133,7 @@ model Project {
   updatedAt   DateTime @updatedAt
 
   // Relations
-  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace   Workspace?    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   owner       User          @relation(fields: [ownerId], references: [id])
   conversations Conversation[]
   folders     Folder[]

@@ -4,7 +4,7 @@ export interface Project {
   description?: string
   color: string
   icon?: string
-  workspaceId?: string
+  workspaceId?: string | null // null = Personal space
   userId: string
   defaultPromptId?: string
   conversationCount: number
@@ -17,7 +17,8 @@ export interface CreateProjectInput {
   description?: string
   color?: string
   icon?: string
-  workspaceId?: string
+  workspaceId?: string | null // null = Personal space
+  userId: string // Owner of the project
 }
 
 export interface UpdateProjectInput {

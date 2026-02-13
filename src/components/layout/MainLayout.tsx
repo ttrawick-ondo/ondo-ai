@@ -54,18 +54,23 @@ export function MainLayout({ children }: MainLayoutProps) {
   const isAuthenticated = useIsAuthenticated()
   const activeWorkspaceId = useActiveWorkspaceId()
 
-  // Fetch data when user is authenticated or workspace changes
+  // Fetch projects once when user logs in (selector filters by workspace)
   useEffect(() => {
     if (!currentUser?.id || !isAuthenticated) return
 
-    // Fetch all data in parallel, scoped to the active workspace
-    Promise.all([
-      fetchUserConversations(currentUser.id, activeWorkspaceId),
-      fetchUserProjects(currentUser.id, activeWorkspaceId ?? undefined),
-    ]).catch((error) => {
-      console.error('Error loading initial data:', error)
+    fetchUserProjects(currentUser.id).catch((error) => {
+      console.error('Error loading projects:', error)
     })
-  }, [fetchUserConversations, fetchUserProjects, currentUser?.id, isAuthenticated, activeWorkspaceId])
+  }, [fetchUserProjects, currentUser?.id, isAuthenticated])
+
+  // Fetch conversations when workspace changes (filtered server-side)
+  useEffect(() => {
+    if (!currentUser?.id || !isAuthenticated) return
+
+    fetchUserConversations(currentUser.id, activeWorkspaceId).catch((error) => {
+      console.error('Error loading conversations:', error)
+    })
+  }, [fetchUserConversations, currentUser?.id, isAuthenticated, activeWorkspaceId])
 
   return (
     <div className="flex h-screen overflow-hidden">

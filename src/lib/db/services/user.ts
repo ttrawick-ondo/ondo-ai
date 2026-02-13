@@ -153,3 +153,57 @@ export async function getUserDefaultModel(id: string): Promise<{
 
   return null
 }
+
+// ============================================================================
+// User Search
+// ============================================================================
+
+export interface SearchUsersOptions {
+  excludeWorkspaceId?: string
+  limit?: number
+}
+
+export async function searchUsers(
+  query: string,
+  options?: SearchUsersOptions
+): Promise<User[]> {
+  const limit = options?.limit ?? 10
+
+  // Build the where clause
+  const whereClause: Record<string, unknown> = {
+    email: {
+      contains: query,
+    },
+  }
+
+  // If excluding workspace members, we need to filter them out
+  if (options?.excludeWorkspaceId) {
+    const existingMembers = await prisma.workspaceMember.findMany({
+      where: { workspaceId: options.excludeWorkspaceId },
+      select: { userId: true },
+    })
+    const excludeUserIds = existingMembers.map((m) => m.userId)
+
+    if (excludeUserIds.length > 0) {
+      whereClause.id = { notIn: excludeUserIds }
+    }
+  }
+
+  return prisma.user.findMany({
+    where: whereClause,
+    take: limit,
+    orderBy: { email: 'asc' },
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      avatar: true,
+      role: true,
+      createdAt: true,
+      updatedAt: true,
+      lastLoginAt: true,
+      settings: true,
+      passwordHash: false,
+    },
+  }) as Promise<User[]>
+}

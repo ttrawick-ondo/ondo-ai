@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import {
   getWorkspaceMembers,
+  getWorkspaceMember,
   addWorkspaceMember,
   updateMemberRole,
   removeWorkspaceMember,
@@ -37,6 +38,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     if (!userId) {
       return NextResponse.json(
         { error: 'userId is required' },
+        { status: 400 }
+      )
+    }
+
+    // Check if user is already a member
+    const existingMember = await getWorkspaceMember(workspaceId, userId)
+    if (existingMember) {
+      return NextResponse.json(
+        { error: 'User is already a member of this workspace' },
         { status: 400 }
       )
     }

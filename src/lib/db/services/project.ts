@@ -8,7 +8,7 @@ import { prisma } from '../index'
 import type { Project, Conversation, Folder } from '@/generated/prisma'
 
 export interface CreateProjectInput {
-  workspaceId: string
+  workspaceId?: string | null // null = Personal space
   ownerId: string
   name: string
   description?: string
@@ -43,7 +43,7 @@ export interface ProjectWithRelations extends Project {
 export async function createProject(input: CreateProjectInput): Promise<Project> {
   return prisma.project.create({
     data: {
-      workspaceId: input.workspaceId,
+      workspaceId: input.workspaceId ?? null,
       ownerId: input.ownerId,
       name: input.name,
       description: input.description,
@@ -100,7 +100,7 @@ export async function getProjectWithStats(id: string): Promise<ProjectWithStats 
 export async function getUserProjects(
   userId: string,
   options?: {
-    workspaceId?: string
+    workspaceId?: string | null // null = Personal space, undefined = all projects
     archived?: boolean
     limit?: number
     offset?: number
@@ -109,7 +109,8 @@ export async function getUserProjects(
   const projects = await prisma.project.findMany({
     where: {
       ownerId: userId,
-      workspaceId: options?.workspaceId,
+      // Only filter by workspaceId if explicitly provided (including null for Personal)
+      ...(options?.workspaceId !== undefined && { workspaceId: options.workspaceId }),
       archived: options?.archived ?? false,
     },
     include: {

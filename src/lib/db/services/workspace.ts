@@ -199,7 +199,8 @@ export async function getWorkspaceMember(
 export async function addWorkspaceMember(
   workspaceId: string,
   userId: string,
-  role: 'admin' | 'member' = 'member'
+  role: 'admin' | 'member' = 'member',
+  source: 'manual' | 'invitation' | 'okta_sync' = 'manual'
 ): Promise<WorkspaceMember> {
   // Update workspace member count
   await prisma.workspace.update({
@@ -212,6 +213,7 @@ export async function addWorkspaceMember(
       workspaceId,
       userId,
       role,
+      source,
     },
   })
 }
@@ -363,6 +365,7 @@ export async function acceptWorkspaceInvitation(
         workspaceId: invitation.workspaceId,
         userId,
         role: invitation.role,
+        source: 'invitation',
       },
     })
   })

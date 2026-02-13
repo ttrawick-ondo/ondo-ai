@@ -14,6 +14,13 @@ export {
   useDeleteWorkspace,
   useUpdateMemberRole,
   useRemoveMember,
+  useAddMember,
+  useSearchUsers,
+  useWorkspaceInvitations,
+  useInvitationByToken,
+  useCreateInvitation,
+  useDeleteInvitation,
+  useAcceptInvitation,
 } from './workspaces'
 
 // Prompt Queries & Mutations
