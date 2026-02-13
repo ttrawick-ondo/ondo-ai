@@ -2,6 +2,7 @@
 
 import { LogOut, Settings, User } from 'lucide-react'
 import Link from 'next/link'
+import { signOut } from 'next-auth/react'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -17,6 +18,13 @@ import { useCurrentUser, useUserActions } from '@/stores'
 export function UserMenu() {
   const user = useCurrentUser()
   const { logout } = useUserActions()
+
+  const handleLogout = () => {
+    // Clear local state
+    logout()
+    // Sign out from NextAuth (clears session cookie and redirects to sign-in)
+    signOut({ callbackUrl: '/auth/signin' })
+  }
 
   if (!user) return null
 
@@ -59,7 +67,7 @@ export function UserMenu() {
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={logout} className="text-destructive">
+        <DropdownMenuItem onClick={handleLogout} className="text-destructive">
           <LogOut className="mr-2 h-4 w-4" />
           Log out
         </DropdownMenuItem>
