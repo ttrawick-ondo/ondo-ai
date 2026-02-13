@@ -80,6 +80,7 @@ async function validateOndoBotAuth(request: NextRequest): Promise<boolean> {
 
 /**
  * Available OndoBot actions
+ * Now includes Tool API actions from slackbot-ondo
  */
 const SUPPORTED_ACTIONS = [
   'chat',
@@ -87,6 +88,13 @@ const SUPPORTED_ACTIONS = [
   'query_data',
   'get_status',
   'list_automations',
+  // Tool API actions
+  'execute_tool',
+  'list_tools',
+  'search_ownership',
+  'list_owner_areas',
+  'search_candidates',
+  'get_candidate_profile',
 ] as const
 
 type OndoBotAction = (typeof SUPPORTED_ACTIONS)[number]
@@ -231,6 +239,164 @@ async function executeOndoBotAction(
       return { success: true, data }
     }
 
+    // ==================== Tool API Actions ====================
+
+    case 'execute_tool': {
+      // Execute any OndoBot tool via the Tool API
+      const toolName = parameters.tool as string
+      const toolParams = (parameters.params as Record<string, unknown>) || {}
+      const userEmail = parameters.userEmail as string | undefined
+
+      if (!toolName) {
+        return {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'tool parameter is required for execute_tool action',
+          },
+        }
+      }
+
+      const response = await fetch(`${baseUrl}/api/v1/tools/execute`, {
+        method: 'POST',
+        headers: {
+          ...headers,
+          ...(userEmail && { 'X-User-Email': userEmail }),
+        },
+        body: JSON.stringify({
+          tool: toolName,
+          params: toolParams,
+        }),
+      })
+
+      const data = await response.json()
+      return data
+    }
+
+    case 'list_tools': {
+      // List all available OndoBot tools
+      const response = await fetch(`${baseUrl}/api/v1/tools`, {
+        headers,
+      })
+
+      if (!response.ok) {
+        return {
+          success: false,
+          error: {
+            code: 'LIST_TOOLS_FAILED',
+            message: 'Failed to list OndoBot tools',
+          },
+        }
+      }
+
+      const data = await response.json()
+      return { success: true, data }
+    }
+
+    case 'search_ownership': {
+      // Convenience action for ownership search
+      const query = parameters.query as string
+      const limit = parameters.limit as number | undefined
+
+      if (!query) {
+        return {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'query parameter is required',
+          },
+        }
+      }
+
+      const response = await fetch(`${baseUrl}/api/v1/ownership/search`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ query, limit }),
+      })
+
+      const data = await response.json()
+      return data
+    }
+
+    case 'list_owner_areas': {
+      // List areas for a specific owner
+      const owner = parameters.owner as string
+
+      if (!owner) {
+        return {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'owner parameter is required',
+          },
+        }
+      }
+
+      const response = await fetch(`${baseUrl}/api/v1/tools/execute`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          tool: 'list_owner_areas',
+          params: { owner },
+        }),
+      })
+
+      const data = await response.json()
+      return data
+    }
+
+    case 'search_candidates': {
+      // Convenience action for candidate search
+      const query = parameters.query as string
+      const limit = parameters.limit as number | undefined
+
+      if (!query) {
+        return {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'query parameter is required',
+          },
+        }
+      }
+
+      const response = await fetch(`${baseUrl}/api/v1/candidates/search`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ query, limit }),
+      })
+
+      const data = await response.json()
+      return data
+    }
+
+    case 'get_candidate_profile': {
+      // Get detailed candidate profile
+      const candidateId = parameters.candidate_id as string
+
+      if (!candidateId) {
+        return {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'candidate_id parameter is required',
+          },
+        }
+      }
+
+      const response = await fetch(`${baseUrl}/api/v1/tools/execute`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          tool: 'get_candidate_profile',
+          params: { candidate_id: candidateId },
+        }),
+      })
+
+      const data = await response.json()
+      return data
+    }
+
     default:
       return {
         success: false,
@@ -346,6 +512,13 @@ function getActionDescription(action: OndoBotAction): string {
     query_data: 'Query data from OndoBot data sources',
     get_status: 'Get the current status of OndoBot',
     list_automations: 'List available automation workflows',
+    // Tool API actions
+    execute_tool: 'Execute any OndoBot tool by name with parameters',
+    list_tools: 'List all available OndoBot tools with their schemas',
+    search_ownership: 'Search for who owns a topic, area, or responsibility',
+    list_owner_areas: 'List all ownership areas for a specific person',
+    search_candidates: 'Search for candidates by name or email',
+    get_candidate_profile: 'Get detailed profile for a specific candidate',
   }
   return descriptions[action]
 }

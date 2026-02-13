@@ -14,6 +14,7 @@ import type {
   FileAttachment,
   MessageRole,
   ChatCompletionMessage,
+  OndoBotStructuredResult,
 } from '@/types'
 import { generateId } from '@/lib/utils'
 import { chatClient, type RoutingInfo } from '@/lib/api/client'
@@ -126,6 +127,8 @@ export function createAssistantMessage(
       wasAutoRouted?: boolean
       routedBy?: string
     }
+    // OndoBot structured result data for rich UI rendering
+    ondoBotStructured?: OndoBotStructuredResult
   }
 ): Message {
   return {
@@ -139,6 +142,7 @@ export function createAssistantMessage(
       tokenCount: options?.tokenCount,
       processingTimeMs: options?.processingTimeMs,
       routing: options?.routing,
+      ondoBotStructured: options?.ondoBotStructured,
     },
     createdAt: new Date(),
   }
@@ -277,6 +281,7 @@ export async function streamChat(
                     wasAutoRouted: routingInfo.wasAutoRouted,
                     routedBy: routingInfo.routedBy,
                   } : undefined,
+                  ondoBotStructured: response.metadata.ondoBotStructured as OndoBotStructuredResult | undefined,
                 })
 
                 callbacks.onMessageCreated(assistantMessage)
@@ -334,6 +339,7 @@ export async function streamChat(
                     wasAutoRouted: routingInfo.wasAutoRouted,
                     routedBy: routingInfo.routedBy,
                   } : undefined,
+                  ondoBotStructured: response.metadata.ondoBotStructured as OndoBotStructuredResult | undefined,
                 })
 
                 callbacks.onMessageCreated(finalMessage)

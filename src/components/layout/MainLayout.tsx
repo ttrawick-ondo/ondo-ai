@@ -5,7 +5,7 @@ import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { AlertTriangle } from 'lucide-react'
-import { useChatActions, useProjectActions } from '@/stores'
+import { useChatActions, useProjectActions, useCurrentUser, useIsAuthenticated } from '@/stores'
 
 interface MainLayoutProps {
   children: React.ReactNode
@@ -50,20 +50,23 @@ function ContentErrorFallback() {
 export function MainLayout({ children }: MainLayoutProps) {
   const { fetchUserConversations } = useChatActions()
   const { fetchUserProjects } = useProjectActions()
+  const currentUser = useCurrentUser()
+  const isAuthenticated = useIsAuthenticated()
 
-  // Fetch data on mount
+  // Fetch data when user is authenticated
   useEffect(() => {
-    const userId = 'user-1' // TODO: Get from auth context
-    const workspaceId = 'default' // TODO: Get from auth context
+    if (!currentUser?.id || !isAuthenticated) return
+
+    const workspaceId = 'default' // TODO: Get from workspace context
 
     // Fetch all data in parallel
     Promise.all([
-      fetchUserConversations(userId),
-      fetchUserProjects(userId, workspaceId),
+      fetchUserConversations(currentUser.id),
+      fetchUserProjects(currentUser.id, workspaceId),
     ]).catch((error) => {
       console.error('Error loading initial data:', error)
     })
-  }, [fetchUserConversations, fetchUserProjects])
+  }, [fetchUserConversations, fetchUserProjects, currentUser?.id, isAuthenticated])
 
   return (
     <div className="flex h-screen overflow-hidden">

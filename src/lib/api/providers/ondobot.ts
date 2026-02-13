@@ -19,12 +19,25 @@ interface OndoBotRequest {
   stream?: boolean
 }
 
+interface OndoBotStructuredData {
+  type: string
+  data: Record<string, unknown>
+  summary: string
+  pagination?: {
+    total: number
+    showing: number
+    hasMore: boolean
+  }
+}
+
 interface OndoBotResponse {
   id: string
   response: string
+  structured?: OndoBotStructuredData
   metadata?: {
     model?: string
     tokensUsed?: number
+    toolUsed?: string
   }
 }
 
@@ -120,6 +133,8 @@ export class OndoBotProvider extends BaseProvider {
           provider: 'ondobot',
           processingTimeMs: Date.now() - startTime,
           finishReason: 'stop',
+          // Pass through structured data for rich UI rendering
+          ondoBotStructured: data.structured as Record<string, unknown> | undefined,
         },
         usage,
       }
@@ -185,6 +200,7 @@ export class OndoBotProvider extends BaseProvider {
 
       const decoder = new TextDecoder()
       let fullContent = ''
+      let structuredData: OndoBotStructuredData | undefined
 
       while (true) {
         const { done, value } = await reader.read()
@@ -200,6 +216,10 @@ export class OndoBotProvider extends BaseProvider {
 
             try {
               const parsed = JSON.parse(data)
+              // First chunk may contain structured data for rich rendering
+              if (parsed.structured) {
+                structuredData = parsed.structured
+              }
               if (parsed.delta) {
                 fullContent += parsed.delta
                 yield createDeltaEvent(parsed.delta)
@@ -225,6 +245,8 @@ export class OndoBotProvider extends BaseProvider {
         provider: 'ondobot',
         processingTimeMs: Date.now() - startTime,
         finishReason: 'stop',
+        // Pass through structured data for rich UI rendering
+        ondoBotStructured: structuredData as Record<string, unknown> | undefined,
       })
     } catch (error) {
       const apiError = handleProviderError(error, 'ondobot')

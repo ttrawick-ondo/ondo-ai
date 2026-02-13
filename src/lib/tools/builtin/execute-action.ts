@@ -19,7 +19,7 @@ interface ActionResponse {
 
 export const executeActionTool = createTool(
   'execute_action',
-  'Execute an action on an external system. Use this to create tickets, send messages, update records, or trigger automations. Available systems: ondobot (internal bot), hubspot (CRM - future), jira (tickets - future), slack (messaging - future).',
+  'Execute an action on an external system. Use this to search ownership, find candidates, create tickets, send messages, update records, or trigger automations. Available systems: ondobot (internal bot with ownership & candidate data), hubspot (CRM - future), jira (tickets - future), slack (messaging - future).',
   {
     type: 'object',
     properties: {
@@ -30,11 +30,11 @@ export const executeActionTool = createTool(
       },
       action: {
         type: 'string',
-        description: 'The action to execute. Available actions depend on the system. For ondobot: chat, run_automation, query_data, get_status, list_automations.',
+        description: 'The action to execute. For ondobot: search_ownership (find who owns something), list_owner_areas (list what someone owns), search_candidates (find candidates), get_candidate_profile (get candidate details), execute_tool (run any tool), list_tools, chat, run_automation, query_data, get_status, list_automations.',
       },
       parameters: {
         type: 'object',
-        description: 'Parameters for the action. Varies by system and action. Pass as a JSON object.',
+        description: 'Parameters for the action. For search_ownership: {query: string, limit?: number}. For list_owner_areas: {owner: string}. For search_candidates: {query: string, limit?: number}. For get_candidate_profile: {candidate_id: string}. For execute_tool: {tool: string, params: object}.',
       },
     },
     required: ['system', 'action'],
@@ -132,7 +132,21 @@ export const executeActionTool = createTool(
  */
 export function getAvailableActions(system: ActionSystem): string[] {
   const actions: Record<ActionSystem, string[]> = {
-    ondobot: ['chat', 'run_automation', 'query_data', 'get_status', 'list_automations'],
+    ondobot: [
+      // Tool API actions (primary)
+      'search_ownership',
+      'list_owner_areas',
+      'search_candidates',
+      'get_candidate_profile',
+      'execute_tool',
+      'list_tools',
+      // Legacy actions
+      'chat',
+      'run_automation',
+      'query_data',
+      'get_status',
+      'list_automations',
+    ],
     hubspot: ['create_contact', 'update_deal'], // Future
     jira: ['create_issue', 'update_issue'], // Future
     slack: ['send_message'], // Future

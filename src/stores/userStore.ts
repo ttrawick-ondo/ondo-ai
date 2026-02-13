@@ -1,7 +1,6 @@
 import { create } from 'zustand'
 import { devtools, persist } from 'zustand/middleware'
 import type { User, UserPreferences } from '@/types'
-import { mockCurrentUser } from '@/lib/mocks/data'
 
 interface UserState {
   currentUser: User | null
@@ -35,8 +34,8 @@ export const useUserStore = create<UserStore>()(
   devtools(
     persist(
       (set) => ({
-        currentUser: mockCurrentUser,
-        isAuthenticated: true, // Mock as authenticated
+        currentUser: null,
+        isAuthenticated: false,
         preferences: defaultPreferences,
 
         actions: {

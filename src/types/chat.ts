@@ -1,4 +1,5 @@
 import type { ToolCall, ToolExecutionRecord } from './tools'
+import type { OndoBotStructuredResult } from './ondobot'
 
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool'
 
@@ -72,6 +73,8 @@ export interface MessageMetadata {
     wasAutoRouted?: boolean
     routedBy?: string
   }
+  // OndoBot structured result data for rich rendering
+  ondoBotStructured?: OndoBotStructuredResult
 }
 
 export interface Message {

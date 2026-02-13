@@ -9,6 +9,8 @@ import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/comp
 import { MarkdownRenderer } from './MarkdownRenderer'
 import { ToolCallDisplay, ToolResultDisplay } from './ToolCallDisplay'
 import { ContentWithCitations } from './CitedContent'
+import { OndoBotResults } from './OndoBotResults'
+import { isOndoBotStructuredResult } from '@/types/ondobot'
 import { FilePreviewList } from './FilePreview'
 import { ReadAloudButton } from './AudioPlayer'
 import { RoutingIndicator } from './RoutingIndicator'
@@ -140,7 +142,14 @@ export function MessageBubble({ message, isStreaming, onBranch }: MessageBubbleP
             </>
           ) : (
             <>
-              {message.content && (
+              {/* Check for OndoBot structured data for rich rendering */}
+              {message.metadata?.ondoBotStructured &&
+               isOndoBotStructuredResult(message.metadata.ondoBotStructured) ? (
+                <OndoBotResults
+                  structured={message.metadata.ondoBotStructured}
+                  className="min-w-[320px]"
+                />
+              ) : message.content && (
                 message.citations && message.citations.length > 0 ? (
                   <ContentWithCitations
                     content={message.content}

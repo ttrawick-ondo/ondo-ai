@@ -15,6 +15,17 @@ import {
 } from '@/lib/services/chat-streaming'
 import { executeToolCalls as executeToolCallsService } from '@/lib/services/tool-execution'
 import { useRoutingStore } from './routingStore'
+import { useUserStore } from './userStore'
+
+// Helper to get current user ID from user store
+function getCurrentUserId(): string {
+  const user = useUserStore.getState().currentUser
+  if (!user?.id) {
+    console.warn('No authenticated user found, using fallback')
+    return 'anonymous'
+  }
+  return user.id
+}
 
 // Register built-in tools on module load
 registerBuiltinTools()
@@ -88,13 +99,14 @@ export const useChatStore = create<ChatStore>()(
             const tempId = `conv-${generateId()}`
             const now = new Date()
 
+            const userId = getCurrentUserId()
             const conversation: Conversation = {
               id: tempId,
               title,
               projectId,
               folderId,
               modelId,
-              userId: 'user-1',
+              userId,
               messageCount: 0,
               lastMessageAt: now,
               createdAt: now,
@@ -116,7 +128,7 @@ export const useChatStore = create<ChatStore>()(
             try {
               // Call API
               const created = await conversationApi.createConversation({
-                userId: 'user-1',
+                userId,
                 projectId: projectId || undefined,
                 folderId,
                 title,

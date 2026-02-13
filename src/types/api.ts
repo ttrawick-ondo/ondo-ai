@@ -54,6 +54,8 @@ export interface ChatCompletionMetadata {
   provider: AIProvider
   processingTimeMs: number
   finishReason: 'stop' | 'length' | 'content_filter' | 'error' | 'tool_calls'
+  // OndoBot structured result data for rich UI rendering
+  ondoBotStructured?: Record<string, unknown>
 }
 
 // Token usage tracking
