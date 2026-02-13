@@ -1,8 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Check, ChevronsUpDown, Building2, Plus, Settings } from 'lucide-react'
-import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -18,25 +17,23 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { useActiveWorkspaceId, useWorkspaceUIActions, useUIActions } from '@/stores'
-import { useWorkspaces, useWorkspace, useWorkspaceMembers } from '@/lib/queries'
+import { useWorkspaces } from '@/lib/queries'
 import { WorkspaceSettingsDialog } from '@/components/workspace'
 import { useAuthSession } from '@/hooks/useCurrentUser'
-import type { WorkspaceRole } from '@/types'
 
 export function WorkspaceSelector() {
   const { userId: currentUserId } = useAuthSession()
   const { data: workspaces = [] } = useWorkspaces(currentUserId || '')
   const activeWorkspaceId = useActiveWorkspaceId()
-  const { data: activeWorkspace } = useWorkspace(activeWorkspaceId)
-  const { data: members } = useWorkspaceMembers(activeWorkspaceId)
+  // Find active workspace from list instead of separate API call
+  const activeWorkspace = useMemo(
+    () => workspaces.find((w) => w.id === activeWorkspaceId),
+    [workspaces, activeWorkspaceId]
+  )
   const { setActiveWorkspace } = useWorkspaceUIActions()
   const { openModal } = useUIActions()
 
   const [showSettings, setShowSettings] = useState(false)
-
-  // Get current user's role in the active workspace
-  const currentUserMember = members?.find((m) => m.userId === currentUserId)
-  const currentUserRole: WorkspaceRole = currentUserMember?.role ?? 'member'
 
   return (
     <div className="px-4 pb-2">
@@ -117,13 +114,12 @@ export function WorkspaceSelector() {
         )}
       </div>
 
-      {activeWorkspaceId && currentUserId && (
+      {activeWorkspaceId && currentUserId && showSettings && (
         <WorkspaceSettingsDialog
           open={showSettings}
           onOpenChange={setShowSettings}
           workspaceId={activeWorkspaceId}
           currentUserId={currentUserId}
-          currentUserRole={currentUserRole}
         />
       )}
     </div>

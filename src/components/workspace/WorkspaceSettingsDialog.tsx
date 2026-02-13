@@ -28,7 +28,7 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { MemberManagement } from './MemberManagement'
 import { AddMemberDialog } from './AddMemberDialog'
-import { useWorkspace, useUpdateWorkspace, useDeleteWorkspace } from '@/lib/queries'
+import { useWorkspace, useWorkspaceMembers, useUpdateWorkspace, useDeleteWorkspace } from '@/lib/queries'
 import type { WorkspaceRole } from '@/types'
 
 interface WorkspaceSettingsDialogProps {
@@ -36,7 +36,6 @@ interface WorkspaceSettingsDialogProps {
   onOpenChange: (open: boolean) => void
   workspaceId: string
   currentUserId: string
-  currentUserRole: WorkspaceRole
 }
 
 export function WorkspaceSettingsDialog({
@@ -44,11 +43,16 @@ export function WorkspaceSettingsDialog({
   onOpenChange,
   workspaceId,
   currentUserId,
-  currentUserRole,
 }: WorkspaceSettingsDialogProps) {
   const { data: workspace } = useWorkspace(workspaceId)
+  // Fetch members only when dialog is open (lazy loading)
+  const { data: members } = useWorkspaceMembers(workspaceId)
   const updateWorkspace = useUpdateWorkspace()
   const deleteWorkspace = useDeleteWorkspace()
+
+  // Determine current user's role from members list
+  const currentUserMember = members?.find((m) => m.userId === currentUserId)
+  const currentUserRole: WorkspaceRole = currentUserMember?.role ?? 'member'
 
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')

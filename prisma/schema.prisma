@@ -141,6 +141,7 @@ model Project {
 
   @@index([workspaceId])
   @@index([ownerId])
+  @@index([ownerId, workspaceId, archived]) // Composite for getUserProjects query
 }
 
 // ============================================================================
@@ -207,6 +208,7 @@ model Conversation {
   @@index([userId])
   @@index([parentId])
   @@index([createdAt])
+  @@index([userId, workspaceId, archived]) // Composite for getUserConversations query
 }
 
 model Message {
