@@ -201,31 +201,43 @@ export class OndoBotProvider extends BaseProvider {
       const decoder = new TextDecoder()
       let fullContent = ''
       let structuredData: OndoBotStructuredData | undefined
+      let buffer = '' // Buffer for incomplete SSE events
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
 
-        const chunk = decoder.decode(value, { stream: true })
-        const lines = chunk.split('\n')
+        // Append chunk to buffer
+        buffer += decoder.decode(value, { stream: true })
 
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6)
-            if (data === '[DONE]') continue
+        // Split by SSE event delimiter (double newline)
+        const events = buffer.split('\n\n')
 
-            try {
-              const parsed = JSON.parse(data)
-              // First chunk may contain structured data for rich rendering
-              if (parsed.structured) {
-                structuredData = parsed.structured
+        // Keep the last potentially incomplete event in the buffer
+        buffer = events.pop() || ''
+
+        for (const event of events) {
+          const lines = event.split('\n')
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6)
+              if (data === '[DONE]') continue
+
+              try {
+                const parsed = JSON.parse(data)
+
+                // First event may contain structured data for rich rendering
+                if (parsed.structured) {
+                  structuredData = parsed.structured
+                }
+                if (parsed.delta) {
+                  fullContent += parsed.delta
+                  yield createDeltaEvent(parsed.delta)
+                }
+              } catch {
+                // Ignore parse errors for incomplete JSON
               }
-              if (parsed.delta) {
-                fullContent += parsed.delta
-                yield createDeltaEvent(parsed.delta)
-              }
-            } catch {
-              // Ignore parse errors for non-JSON lines
             }
           }
         }

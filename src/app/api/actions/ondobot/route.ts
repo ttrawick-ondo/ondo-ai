@@ -50,6 +50,21 @@ function getOndoBotHeaders(): Record<string, string> {
  * Validate the authentication for OndoBot actions
  */
 async function validateOndoBotAuth(request: NextRequest): Promise<boolean> {
+  // Allow same-origin browser requests (for UI components like ParentSelectionResult)
+  // These are protected by CORS and don't need Bearer token
+  const origin = request.headers.get('origin')
+  const referer = request.headers.get('referer')
+  const host = request.headers.get('host')
+
+  // If request comes from same origin (browser), allow it
+  if (origin && host && (origin.includes(host) || origin.includes('localhost'))) {
+    return true
+  }
+  if (referer && host && (referer.includes(host) || referer.includes('localhost'))) {
+    return true
+  }
+
+  // For external API requests, require Bearer token
   const authHeader = request.headers.get('authorization')
 
   if (!authHeader?.startsWith('Bearer ')) {

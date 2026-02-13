@@ -67,6 +67,69 @@ export interface OwnerAreasStructured {
 }
 
 /**
+ * Ownership created result
+ */
+export interface OwnershipCreatedStructured {
+  type: 'ownership_created'
+  data: {
+    area: string
+    owner: string
+    pageUrl: string
+    parentName?: string
+    description?: string
+  }
+  summary: string
+}
+
+/**
+ * Ownership form - returned to show the full ownership creation form
+ * Pre-filled with values extracted from natural language request
+ */
+export interface OwnershipFormStructured {
+  type: 'ownership_form'
+  data: {
+    prefill: {
+      area?: string
+      owner?: string
+      description?: string
+      parentSearch?: string
+    }
+    hierarchy: Array<{
+      id: string
+      name: string
+      fullPath: string
+      owner?: string
+      parentId?: string
+      hasChildren: boolean
+    }>
+  }
+  summary: string
+}
+
+/**
+ * Ownership parent selection - returned when user needs to select a parent area
+ * @deprecated Use OwnershipFormStructured instead for better UX
+ */
+export interface OwnershipParentSelectionStructured {
+  type: 'ownership_parent_selection'
+  data: {
+    pendingArea: string
+    pendingOwner: string
+    pendingOwnerSlackId: string
+    pendingDescription?: string
+    searchQuery: string
+    parentMatches: Array<{
+      id: string
+      name: string
+      fullPath: string
+      owner?: string
+    }>
+    totalMatches: number
+  }
+  summary: string
+}
+
+/**
  * Candidate search result
  */
 export interface CandidateSearchStructured {
@@ -177,6 +240,9 @@ export type OndoBotStructuredResult =
   | OwnershipSearchStructured
   | OwnerListStructured
   | OwnerAreasStructured
+  | OwnershipCreatedStructured
+  | OwnershipFormStructured
+  | OwnershipParentSelectionStructured
   | CandidateSearchStructured
   | CandidateProfileStructured
   | RecentCandidatesStructured

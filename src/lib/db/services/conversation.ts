@@ -175,6 +175,22 @@ export async function createMessage(input: CreateMessageInput): Promise<Message>
   })
 }
 
+/**
+ * Parse JSON fields in a message that are stored as strings
+ */
+function parseMessageJsonFields(message: Message): Message & {
+  metadata: Record<string, unknown> | null
+  toolCalls: Record<string, unknown>[] | null
+  attachments: Record<string, unknown>[] | null
+} {
+  return {
+    ...message,
+    metadata: message.metadata ? JSON.parse(message.metadata) : null,
+    toolCalls: message.toolCalls ? JSON.parse(message.toolCalls) : null,
+    attachments: message.attachments ? JSON.parse(message.attachments) : null,
+  }
+}
+
 export async function getMessages(
   conversationId: string,
   options?: {
@@ -183,8 +199,8 @@ export async function getMessages(
     before?: Date
     after?: Date
   }
-): Promise<Message[]> {
-  return prisma.message.findMany({
+): Promise<(Message & { metadata: Record<string, unknown> | null })[]> {
+  const messages = await prisma.message.findMany({
     where: {
       conversationId,
       createdAt: {
@@ -196,12 +212,19 @@ export async function getMessages(
     take: options?.limit,
     skip: options?.offset,
   })
+
+  // Parse JSON fields before returning
+  return messages.map(parseMessageJsonFields)
 }
 
-export async function getMessage(id: string): Promise<Message | null> {
-  return prisma.message.findUnique({
+export async function getMessage(id: string): Promise<(Message & { metadata: Record<string, unknown> | null }) | null> {
+  const message = await prisma.message.findUnique({
     where: { id },
   })
+
+  if (!message) return null
+
+  return parseMessageJsonFields(message)
 }
 
 export async function deleteMessage(id: string): Promise<void> {
