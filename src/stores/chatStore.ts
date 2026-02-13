@@ -47,14 +47,14 @@ interface ChatState {
 
 interface ChatActions {
   setActiveConversation: (id: string | null) => void
-  createConversation: (title?: string, projectId?: string, modelId?: string, folderId?: string | null) => Promise<string>
+  createConversation: (title?: string, projectId?: string, modelId?: string, folderId?: string | null, workspaceId?: string | null) => Promise<string>
   deleteConversation: (id: string) => Promise<void>
   updateConversationTitle: (id: string, title: string) => Promise<void>
   updateConversationModel: (id: string, modelId: string) => Promise<void>
   sendMessage: (input: SendMessageInput) => Promise<void>
   clearConversation: (id: string) => void
   loadConversations: (conversations: Conversation[]) => void
-  fetchUserConversations: (userId: string, projectId?: string) => Promise<void>
+  fetchUserConversations: (userId: string, workspaceId: string | null, projectId?: string) => Promise<void>
   loadConversationMessages: (conversationId: string) => Promise<void>
   // Tool-related actions
   setEnabledTools: (toolNames: string[]) => void
@@ -68,7 +68,7 @@ interface ChatActions {
   branchConversation: (sourceId: string, branchPointMessageId: string, title?: string) => Promise<string>
   loadBranchConversations: (parentId: string) => Promise<void>
   // Search
-  searchConversations: (query: string, projectId?: string) => Conversation[]
+  searchConversations: (query: string, workspaceId?: string | null, projectId?: string) => Conversation[]
 }
 
 type ChatStore = ChatState & { actions: ChatActions }
@@ -95,7 +95,7 @@ export const useChatStore = create<ChatStore>()(
             set({ activeConversationId: id })
           },
 
-          createConversation: async (title = 'New conversation', projectId, modelId, folderId = null) => {
+          createConversation: async (title = 'New conversation', projectId, modelId, folderId = null, workspaceId = null) => {
             const tempId = `conv-${generateId()}`
             const now = new Date()
 
@@ -105,6 +105,7 @@ export const useChatStore = create<ChatStore>()(
               title,
               projectId,
               folderId,
+              workspaceId: workspaceId ?? undefined,
               modelId,
               userId,
               messageCount: 0,
@@ -131,6 +132,7 @@ export const useChatStore = create<ChatStore>()(
                 userId,
                 projectId: projectId || undefined,
                 folderId,
+                workspaceId,
                 title,
                 model: modelId || 'claude-sonnet-4-20250514',
                 provider: 'anthropic',
@@ -439,11 +441,11 @@ export const useChatStore = create<ChatStore>()(
             set({ conversations: conversationsRecord, isInitialized: true })
           },
 
-          fetchUserConversations: async (userId, projectId) => {
+          fetchUserConversations: async (userId, workspaceId, projectId) => {
             set({ isLoading: true })
             try {
               // API client already maps to Conversation type with modelId
-              const conversations = await conversationApi.getUserConversations(userId, {
+              const conversations = await conversationApi.getUserConversations(userId, workspaceId, {
                 projectId,
               })
 
@@ -659,6 +661,7 @@ export const useChatStore = create<ChatStore>()(
               title: branchTitle,
               projectId: sourceConversation.projectId,
               folderId: sourceConversation.folderId,
+              workspaceId: sourceConversation.workspaceId, // Inherit workspace from source
               modelId: sourceConversation.modelId,
               userId: sourceConversation.userId,
               messageCount: copiedMessages.length,
@@ -747,11 +750,23 @@ export const useChatStore = create<ChatStore>()(
             }
           },
 
-          searchConversations: (query, projectId) => {
+          searchConversations: (query, workspaceId, projectId) => {
             const state = get()
             const lowercaseQuery = query.toLowerCase()
 
             return Object.values(state.conversations).filter((conv) => {
+              // Filter by workspace
+              if (workspaceId !== undefined) {
+                // For null workspace (Personal), filter conversations with no workspaceId
+                const convWorkspaceId = conv.workspaceId ?? null
+                if (workspaceId === null && convWorkspaceId !== null) {
+                  return false
+                }
+                if (workspaceId !== null && convWorkspaceId !== workspaceId) {
+                  return false
+                }
+              }
+
               // Filter by project if specified
               if (projectId !== undefined && conv.projectId !== projectId) {
                 return false
@@ -790,9 +805,20 @@ export const useActiveConversation = () =>
     state.activeConversationId ? state.conversations[state.activeConversationId] : null
   )
 
-export const useConversations = (): Conversation[] => {
+export const useConversations = (workspaceId?: string | null): Conversation[] => {
   const conversations = useChatStore((state) => state.conversations)
-  return useMemo(() => Object.values(conversations), [conversations])
+  return useMemo(() => {
+    const all = Object.values(conversations)
+    // If workspaceId is undefined, return all conversations
+    if (workspaceId === undefined) return all
+    // Filter by workspace
+    return all.filter((c) => {
+      const convWorkspaceId = c.workspaceId ?? null
+      return workspaceId === null
+        ? convWorkspaceId === null
+        : convWorkspaceId === workspaceId
+    })
+  }, [conversations, workspaceId])
 }
 
 const EMPTY_MESSAGES: import('@/types').Message[] = []
@@ -824,52 +850,92 @@ export const useConversationsInitialized = (): boolean => {
 // Return actions directly from store - they're stable references
 export const useChatActions = () => useChatStore.getState().actions
 
-// Pinned conversations selector
-export const usePinnedConversations = (): Conversation[] => {
+// Pinned conversations selector (filters by workspace)
+export const usePinnedConversations = (workspaceId?: string | null): Conversation[] => {
   const conversations = useChatStore((state) => state.conversations)
   return useMemo(
     () =>
       Object.values(conversations)
-        .filter((c) => c.pinned && !c.archived)
+        .filter((c) => {
+          if (!c.pinned || c.archived) return false
+          // Filter by workspace if specified
+          if (workspaceId !== undefined) {
+            const convWorkspaceId = c.workspaceId ?? null
+            return workspaceId === null
+              ? convWorkspaceId === null
+              : convWorkspaceId === workspaceId
+          }
+          return true
+        })
         .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()),
-    [conversations]
+    [conversations, workspaceId]
   )
 }
 
-// Conversations by folder selector
-export const useConversationsByFolder = (folderId: string | null): Conversation[] => {
+// Conversations by folder selector (filters by workspace)
+export const useConversationsByFolder = (folderId: string | null, workspaceId?: string | null): Conversation[] => {
   const conversations = useChatStore((state) => state.conversations)
   return useMemo(
     () =>
       Object.values(conversations)
-        .filter((c) => c.folderId === folderId && !c.archived)
+        .filter((c) => {
+          if (c.folderId !== folderId || c.archived) return false
+          // Filter by workspace if specified
+          if (workspaceId !== undefined) {
+            const convWorkspaceId = c.workspaceId ?? null
+            return workspaceId === null
+              ? convWorkspaceId === null
+              : convWorkspaceId === workspaceId
+          }
+          return true
+        })
         .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()),
-    [conversations, folderId]
+    [conversations, folderId, workspaceId]
   )
 }
 
-// Conversations by project (not in any folder)
-export const useUnorganizedConversations = (projectId: string): Conversation[] => {
+// Conversations by project (not in any folder, filters by workspace)
+export const useUnorganizedConversations = (projectId: string, workspaceId?: string | null): Conversation[] => {
   const conversations = useChatStore((state) => state.conversations)
   return useMemo(
     () =>
       Object.values(conversations)
-        .filter((c) => c.projectId === projectId && !c.folderId && !c.archived)
+        .filter((c) => {
+          if (c.projectId !== projectId || c.folderId || c.archived) return false
+          // Filter by workspace if specified
+          if (workspaceId !== undefined) {
+            const convWorkspaceId = c.workspaceId ?? null
+            return workspaceId === null
+              ? convWorkspaceId === null
+              : convWorkspaceId === workspaceId
+          }
+          return true
+        })
         .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()),
-    [conversations, projectId]
+    [conversations, projectId, workspaceId]
   )
 }
 
-// Recent conversations (no project)
-export const useRecentConversations = (limit = 10): Conversation[] => {
+// Recent conversations (no project, filters by workspace)
+export const useRecentConversations = (limit = 10, workspaceId?: string | null): Conversation[] => {
   const conversations = useChatStore((state) => state.conversations)
   return useMemo(
     () =>
       Object.values(conversations)
-        .filter((c) => !c.projectId && !c.archived)
+        .filter((c) => {
+          if (c.projectId || c.archived) return false
+          // Filter by workspace if specified
+          if (workspaceId !== undefined) {
+            const convWorkspaceId = c.workspaceId ?? null
+            return workspaceId === null
+              ? convWorkspaceId === null
+              : convWorkspaceId === workspaceId
+          }
+          return true
+        })
         .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime())
         .slice(0, limit),
-    [conversations, limit]
+    [conversations, limit, workspaceId]
   )
 }
 
@@ -892,14 +958,24 @@ export const useParentConversation = (conversationId: string): Conversation | nu
   return conversation?.parentId ? conversations[conversation.parentId] ?? null : null
 }
 
-// Conversations by project
-export const useConversationsByProject = (projectId: string | null): Conversation[] => {
+// Conversations by project (filters by workspace)
+export const useConversationsByProject = (projectId: string | null, workspaceId?: string | null): Conversation[] => {
   const conversations = useChatStore((state) => state.conversations)
   return useMemo(
     () =>
       Object.values(conversations)
-        .filter((c) => c.projectId === projectId && !c.archived)
+        .filter((c) => {
+          if (c.projectId !== projectId || c.archived) return false
+          // Filter by workspace if specified
+          if (workspaceId !== undefined) {
+            const convWorkspaceId = c.workspaceId ?? null
+            return workspaceId === null
+              ? convWorkspaceId === null
+              : convWorkspaceId === workspaceId
+          }
+          return true
+        })
         .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()),
-    [conversations, projectId]
+    [conversations, projectId, workspaceId]
   )
 }

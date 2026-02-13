@@ -11,6 +11,7 @@ export interface CreateConversationInput {
   userId: string
   projectId?: string
   folderId?: string | null
+  workspaceId?: string | null // null = Personal space
   title: string
   model: string
   provider: string
@@ -53,6 +54,7 @@ export async function createConversation(
       userId: input.userId,
       projectId: input.projectId,
       folderId: input.folderId ?? null,
+      workspaceId: input.workspaceId ?? null,
       title: input.title,
       model: input.model,
       provider: input.provider,
@@ -85,6 +87,7 @@ export async function getConversationWithMessages(
 
 export async function getUserConversations(
   userId: string,
+  workspaceId: string | null,
   options?: {
     projectId?: string
     limit?: number
@@ -95,6 +98,7 @@ export async function getUserConversations(
   return prisma.conversation.findMany({
     where: {
       userId,
+      workspaceId: workspaceId, // null = Personal space
       projectId: options?.projectId,
       archived: options?.archived ?? false,
     },
@@ -115,6 +119,7 @@ export async function updateConversation(
     pinned: boolean
     projectId: string | null
     folderId: string | null
+    workspaceId: string | null
     metadata: Record<string, unknown>
   }>
 ): Promise<Conversation> {
@@ -209,19 +214,26 @@ export async function deleteMessage(id: string): Promise<void> {
 // Statistics
 // ============================================================================
 
-export async function getConversationStats(userId: string): Promise<{
+export async function getConversationStats(
+  userId: string,
+  workspaceId?: string | null
+): Promise<{
   totalConversations: number
   totalMessages: number
   totalTokens: number
   estimatedCost: number
 }> {
+  const where = workspaceId !== undefined
+    ? { userId, workspaceId }
+    : { userId }
+
   const [conversationCount, messageStats] = await Promise.all([
     prisma.conversation.count({
-      where: { userId },
+      where,
     }),
     prisma.message.aggregate({
       where: {
-        conversation: { userId },
+        conversation: where,
       },
       _count: true,
       _sum: {
@@ -288,6 +300,7 @@ export async function branchConversation(
       userId: input.userId,
       projectId: source.projectId,
       folderId: source.folderId,
+      workspaceId: source.workspaceId, // Inherit workspace from source
       title: branchTitle,
       model: source.model,
       provider: source.provider,
@@ -353,6 +366,7 @@ export async function getConversationWithBranches(
 
 export async function getPinnedConversations(
   userId: string,
+  workspaceId: string | null,
   options?: {
     projectId?: string
     limit?: number
@@ -361,6 +375,7 @@ export async function getPinnedConversations(
   return prisma.conversation.findMany({
     where: {
       userId,
+      workspaceId: workspaceId, // null = Personal space
       pinned: true,
       projectId: options?.projectId,
       archived: false,
@@ -392,6 +407,7 @@ export async function toggleConversationPin(
 
 export async function searchConversations(
   userId: string,
+  workspaceId: string | null,
   query: string,
   options?: {
     projectId?: string
@@ -404,6 +420,7 @@ export async function searchConversations(
   return prisma.conversation.findMany({
     where: {
       userId,
+      workspaceId: workspaceId, // null = Personal space
       projectId: options?.projectId,
       folderId: options?.folderId,
       archived: options?.includeArchived ? undefined : false,
@@ -430,6 +447,7 @@ export async function searchConversations(
 
 export async function getRecentConversations(
   userId: string,
+  workspaceId: string | null,
   options?: {
     limit?: number
     excludeProjected?: boolean
@@ -438,6 +456,7 @@ export async function getRecentConversations(
   return prisma.conversation.findMany({
     where: {
       userId,
+      workspaceId: workspaceId, // null = Personal space
       archived: false,
       ...(options?.excludeProjected && {
         projectId: null,

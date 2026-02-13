@@ -6,6 +6,7 @@ import {
   getRecentConversations,
   searchConversations,
 } from '@/lib/db/services/conversation'
+import { validateWorkspaceAccess } from '@/lib/auth/workspace'
 
 // GET /api/conversations - Get conversations for user
 export async function GET(request: NextRequest) {
@@ -20,6 +21,9 @@ export async function GET(request: NextRequest) {
     const archived = searchParams.get('archived') === 'true'
     const limit = searchParams.get('limit')
     const offset = searchParams.get('offset')
+    // workspaceId: 'null' string means Personal space, actual value means workspace
+    const workspaceIdParam = searchParams.get('workspaceId')
+    const workspaceId = workspaceIdParam === 'null' ? null : workspaceIdParam
 
     if (!userId) {
       return NextResponse.json(
@@ -28,9 +32,20 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // Validate workspace access if a workspace is specified
+    if (workspaceId) {
+      const hasAccess = await validateWorkspaceAccess(workspaceId, userId)
+      if (!hasAccess) {
+        return NextResponse.json(
+          { error: 'Access denied to this workspace' },
+          { status: 403 }
+        )
+      }
+    }
+
     // Search mode
     if (search) {
-      const conversations = await searchConversations(userId, search, {
+      const conversations = await searchConversations(userId, workspaceId, search, {
         projectId: projectId || undefined,
         folderId: folderId || undefined,
         limit: limit ? parseInt(limit, 10) : undefined,
@@ -41,7 +56,7 @@ export async function GET(request: NextRequest) {
 
     // Pinned conversations
     if (pinned) {
-      const conversations = await getPinnedConversations(userId, {
+      const conversations = await getPinnedConversations(userId, workspaceId, {
         projectId: projectId || undefined,
         limit: limit ? parseInt(limit, 10) : undefined,
       })
@@ -50,7 +65,7 @@ export async function GET(request: NextRequest) {
 
     // Recent conversations (without project)
     if (recent) {
-      const conversations = await getRecentConversations(userId, {
+      const conversations = await getRecentConversations(userId, workspaceId, {
         limit: limit ? parseInt(limit, 10) : undefined,
         excludeProjected: true,
       })
@@ -58,7 +73,7 @@ export async function GET(request: NextRequest) {
     }
 
     // User conversations
-    const conversations = await getUserConversations(userId, {
+    const conversations = await getUserConversations(userId, workspaceId, {
       projectId: projectId || undefined,
       limit: limit ? parseInt(limit, 10) : undefined,
       offset: offset ? parseInt(offset, 10) : undefined,
@@ -78,7 +93,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { userId, projectId, folderId, title, model, provider, systemPrompt, metadata } = body
+    const { userId, projectId, folderId, workspaceId, title, model, provider, systemPrompt, metadata } = body
 
     if (!userId || !title || !model || !provider) {
       return NextResponse.json(
@@ -87,10 +102,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Validate workspace access if a workspace is specified
+    if (workspaceId) {
+      const hasAccess = await validateWorkspaceAccess(workspaceId, userId)
+      if (!hasAccess) {
+        return NextResponse.json(
+          { error: 'Access denied to this workspace' },
+          { status: 403 }
+        )
+      }
+    }
+
     const conversation = await createConversation({
       userId,
       projectId,
       folderId,
+      workspaceId: workspaceId ?? null, // null = Personal space
       title,
       model,
       provider,

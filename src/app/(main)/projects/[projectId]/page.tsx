@@ -26,6 +26,7 @@ import {
   useProjectFolders,
   useFolderActions,
   useFolderExpanded,
+  useActiveWorkspaceId,
 } from '@/stores'
 import { CreateFolderDialog } from '@/components/folders'
 import type { Folder as FolderType, Conversation } from '@/types'
@@ -52,7 +53,8 @@ export default function ProjectDetailPage() {
   const projectId = params.projectId as string
   const project = useProjectById(projectId)
   const { setActiveProject } = useProjectActions()
-  const conversations = useConversations()
+  const activeWorkspaceId = useActiveWorkspaceId()
+  const conversations = useConversations(activeWorkspaceId)
   const { createConversation, setActiveConversation, moveConversationToFolder } = useChatActions()
   const folders = useProjectFolders(projectId)
   const { createFolder, moveFolder } = useFolderActions()
@@ -95,7 +97,7 @@ export default function ProjectDetailPage() {
   }, [project, projectId, setActiveProject])
 
   const handleNewChat = async (folderId?: string) => {
-    const id = await createConversation('New conversation', projectId, undefined, folderId || null)
+    const id = await createConversation('New conversation', projectId, undefined, folderId || null, activeWorkspaceId)
     setActiveConversation(id)
     router.push(`/chat/${id}`)
   }

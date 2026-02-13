@@ -25,12 +25,13 @@ import {
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { ConfirmDeleteDialog } from '@/components/ui/confirm-delete-dialog'
-import { useProjects, useProjectActions, useFolders, useProjectLoading, useProjectsInitialized } from '@/stores'
+import { useProjects, useProjectActions, useFolders, useProjectLoading, useProjectsInitialized, useActiveWorkspaceId } from '@/stores'
 import { PROJECT_COLORS } from '@/types'
 
 export default function ProjectsPage() {
   const router = useRouter()
-  const projects = useProjects()
+  const activeWorkspaceId = useActiveWorkspaceId()
+  const projects = useProjects(activeWorkspaceId)
   const folders = useFolders()
   const isLoading = useProjectLoading()
   const isInitialized = useProjectsInitialized()
@@ -53,10 +54,16 @@ export default function ProjectsPage() {
 
   const handleCreate = () => {
     if (!newProject.name.trim()) return
+    if (!activeWorkspaceId) {
+      // Projects require a workspace - this shouldn't happen in the UI
+      // but adding as a safeguard
+      return
+    }
     createProject({
       name: newProject.name,
       description: newProject.description,
       color: newProject.color,
+      workspaceId: activeWorkspaceId,
     })
     setNewProject({ name: '', description: '', color: PROJECT_COLORS[0] })
     setIsCreateOpen(false)
@@ -125,7 +132,7 @@ export default function ProjectsPage() {
         </div>
         <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
           <DialogTrigger asChild>
-            <Button>
+            <Button disabled={!activeWorkspaceId}>
               <Plus className="h-4 w-4 mr-2" />
               New Project
             </Button>
@@ -186,14 +193,25 @@ export default function ProjectsPage() {
       {filteredProjects.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <FolderKanban className="h-12 w-12 text-muted-foreground/50 mb-4" />
-          <h3 className="text-lg font-medium mb-1">No projects yet</h3>
-          <p className="text-muted-foreground mb-4">
-            Create a project to organize your conversations
-          </p>
-          <Button onClick={() => setIsCreateOpen(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Create First Project
-          </Button>
+          {activeWorkspaceId ? (
+            <>
+              <h3 className="text-lg font-medium mb-1">No projects yet</h3>
+              <p className="text-muted-foreground mb-4">
+                Create a project to organize your conversations
+              </p>
+              <Button onClick={() => setIsCreateOpen(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Create First Project
+              </Button>
+            </>
+          ) : (
+            <>
+              <h3 className="text-lg font-medium mb-1">No projects in Personal space</h3>
+              <p className="text-muted-foreground mb-4">
+                Projects belong to workspaces. Switch to a workspace to create and view projects.
+              </p>
+            </>
+          )}
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

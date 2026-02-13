@@ -5,7 +5,7 @@ import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { AlertTriangle } from 'lucide-react'
-import { useChatActions, useProjectActions, useCurrentUser, useIsAuthenticated } from '@/stores'
+import { useChatActions, useProjectActions, useCurrentUser, useIsAuthenticated, useActiveWorkspaceId } from '@/stores'
 
 interface MainLayoutProps {
   children: React.ReactNode
@@ -52,21 +52,20 @@ export function MainLayout({ children }: MainLayoutProps) {
   const { fetchUserProjects } = useProjectActions()
   const currentUser = useCurrentUser()
   const isAuthenticated = useIsAuthenticated()
+  const activeWorkspaceId = useActiveWorkspaceId()
 
-  // Fetch data when user is authenticated
+  // Fetch data when user is authenticated or workspace changes
   useEffect(() => {
     if (!currentUser?.id || !isAuthenticated) return
 
-    const workspaceId = 'default' // TODO: Get from workspace context
-
-    // Fetch all data in parallel
+    // Fetch all data in parallel, scoped to the active workspace
     Promise.all([
-      fetchUserConversations(currentUser.id),
-      fetchUserProjects(currentUser.id, workspaceId),
+      fetchUserConversations(currentUser.id, activeWorkspaceId),
+      fetchUserProjects(currentUser.id, activeWorkspaceId ?? undefined),
     ]).catch((error) => {
       console.error('Error loading initial data:', error)
     })
-  }, [fetchUserConversations, fetchUserProjects, currentUser?.id, isAuthenticated])
+  }, [fetchUserConversations, fetchUserProjects, currentUser?.id, isAuthenticated, activeWorkspaceId])
 
   return (
     <div className="flex h-screen overflow-hidden">

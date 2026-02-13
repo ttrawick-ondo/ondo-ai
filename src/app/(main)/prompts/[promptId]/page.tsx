@@ -26,6 +26,7 @@ import {
   usePromptUIActions,
   useFavoriteIds,
   useChatActions,
+  useActiveWorkspaceId,
 } from '@/stores'
 import {
   usePrompt,
@@ -45,6 +46,7 @@ export default function PromptDetailPage() {
   const duplicatePromptMutation = useDuplicatePrompt()
   const incrementUsageMutation = useIncrementPromptUsage()
   const { createConversation, setActiveConversation, sendMessage } = useChatActions()
+  const activeWorkspaceId = useActiveWorkspaceId()
   const [copied, setCopied] = useState(false)
   const [variableValues, setVariableValues] = useState<Record<string, string>>({})
 
@@ -83,7 +85,7 @@ export default function PromptDetailPage() {
   const handleUse = async () => {
     if (!prompt) return
     const content = getCompiledPrompt()
-    const id = await createConversation(prompt.title)
+    const id = await createConversation(prompt.title, undefined, undefined, null, activeWorkspaceId)
     setActiveConversation(id)
     incrementUsageMutation.mutate(prompt.id)
     router.push(`/chat/${id}`)

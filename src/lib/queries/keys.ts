@@ -10,6 +10,20 @@ export const queryKeys = {
     list: (userId: string) => ['workspaces', 'list', userId] as const,
     detail: (workspaceId: string) => ['workspaces', 'detail', workspaceId] as const,
     members: (workspaceId: string) => ['workspaces', 'members', workspaceId] as const,
+    invitations: (workspaceId: string) => ['workspaces', 'invitations', workspaceId] as const,
+  },
+
+  // Users
+  users: {
+    all: ['users'] as const,
+    search: (query: string, excludeWorkspaceId?: string) =>
+      ['users', 'search', query, excludeWorkspaceId] as const,
+  },
+
+  // Invitations
+  invitations: {
+    all: ['invitations'] as const,
+    byToken: (token: string) => ['invitations', 'token', token] as const,
   },
 
   // Prompts
@@ -26,13 +40,14 @@ export const queryKeys = {
   // Conversations
   conversations: {
     all: ['conversations'] as const,
-    list: (filters: { userId: string; projectId?: string }) =>
+    list: (filters: { userId: string; workspaceId: string | null; projectId?: string }) =>
       ['conversations', 'list', filters] as const,
     detail: (conversationId: string) => ['conversations', 'detail', conversationId] as const,
     messages: (conversationId: string) => ['conversations', 'messages', conversationId] as const,
-    pinned: (userId: string, projectId?: string) =>
-      ['conversations', 'pinned', userId, projectId] as const,
-    recent: (userId: string) => ['conversations', 'recent', userId] as const,
+    pinned: (userId: string, workspaceId: string | null, projectId?: string) =>
+      ['conversations', 'pinned', userId, workspaceId, projectId] as const,
+    recent: (userId: string, workspaceId: string | null) =>
+      ['conversations', 'recent', userId, workspaceId] as const,
     branches: (conversationId: string) => ['conversations', 'branches', conversationId] as const,
   },
 

@@ -24,6 +24,7 @@ import {
   useConversations,
   useProjects,
   useChatActions,
+  useActiveWorkspaceId,
 } from '@/stores'
 import { usePrompts as usePromptsQuery } from '@/lib/queries'
 
@@ -31,8 +32,9 @@ export function CommandPalette() {
   const router = useRouter()
   const open = useCommandPaletteOpen()
   const { setCommandPaletteOpen } = useUIActions()
-  const conversations = useConversations()
-  const projects = useProjects()
+  const activeWorkspaceId = useActiveWorkspaceId()
+  const conversations = useConversations(activeWorkspaceId)
+  const projects = useProjects(activeWorkspaceId)
   const { data: prompts = [] } = usePromptsQuery({ userId: 'user-1' }) // TODO: Get from auth
   const { createConversation, setActiveConversation } = useChatActions()
 
@@ -42,7 +44,7 @@ export function CommandPalette() {
   }
 
   const handleNewChat = async () => {
-    const id = await createConversation()
+    const id = await createConversation(undefined, undefined, undefined, null, activeWorkspaceId)
     setActiveConversation(id)
     router.push(`/chat/${id}`)
   }

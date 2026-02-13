@@ -71,11 +71,12 @@ model Workspace {
   updatedAt   DateTime @updatedAt
 
   // Relations
-  owner       User     @relation("WorkspaceOwner", fields: [ownerId], references: [id])
-  members     WorkspaceMember[]
-  projects    Project[]
-  prompts     Prompt[]
-  invitations WorkspaceInvitation[]
+  owner         User     @relation("WorkspaceOwner", fields: [ownerId], references: [id])
+  members       WorkspaceMember[]
+  projects      Project[]
+  prompts       Prompt[]
+  invitations   WorkspaceInvitation[]
+  conversations Conversation[]
 
   @@index([slug])
   @@index([ownerId])
@@ -86,6 +87,7 @@ model WorkspaceMember {
   workspaceId String
   userId      String
   role        String   @default("member") // "owner", "admin", "member"
+  source      String   @default("manual") // "manual", "invitation", "okta_sync"
   joinedAt    DateTime @default(now())
 
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -175,6 +177,7 @@ model Conversation {
   id             String   @id @default(cuid())
   projectId      String?
   folderId       String?              // Optional folder within project
+  workspaceId    String?              // null = Personal space, otherwise workspace-scoped
   userId         String
   title          String
   model          String
@@ -192,6 +195,7 @@ model Conversation {
   // Relations
   project     Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
   folder      Folder?        @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  workspace   Workspace?     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages    Message[]
   parent      Conversation?  @relation("Branches", fields: [parentId], references: [id], onDelete: SetNull)
@@ -199,6 +203,7 @@ model Conversation {
 
   @@index([projectId])
   @@index([folderId])
+  @@index([workspaceId])
   @@index([userId])
   @@index([parentId])
   @@index([createdAt])

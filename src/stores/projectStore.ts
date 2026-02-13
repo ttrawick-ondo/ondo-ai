@@ -255,9 +255,18 @@ export const useProjectStore = create<ProjectStore>()(
 )
 
 // Selector hooks
-export const useProjects = (): Project[] => {
+// Filter projects by workspace - projects always require a workspace, so Personal space (null) shows no projects
+export const useProjects = (workspaceId?: string | null): Project[] => {
   const projects = useProjectStore((state) => state.projects)
-  return useMemo(() => Object.values(projects), [projects])
+  return useMemo(() => {
+    const all = Object.values(projects)
+    // If workspaceId is undefined, return all projects (legacy behavior)
+    if (workspaceId === undefined) return all
+    // If workspaceId is null (Personal space), return no projects since projects require a workspace
+    if (workspaceId === null) return []
+    // Filter by workspace
+    return all.filter((p) => p.workspaceId === workspaceId)
+  }, [projects, workspaceId])
 }
 
 export const useActiveProject = () =>

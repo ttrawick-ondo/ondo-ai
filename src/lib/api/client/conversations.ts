@@ -13,6 +13,7 @@ interface ConversationApiResponse {
   title: string
   projectId?: string | null
   folderId?: string | null
+  workspaceId?: string | null
   userId: string
   model: string
   provider: string
@@ -32,6 +33,7 @@ function mapApiResponse(data: ConversationApiResponse): Conversation {
     title: data.title,
     projectId: data.projectId || null,
     folderId: data.folderId || null,
+    workspaceId: data.workspaceId ?? undefined,
     userId: data.userId,
     modelId: data.model, // Map model -> modelId
     messageCount: 0, // Will be updated separately if needed
@@ -49,6 +51,7 @@ export interface CreateConversationInput {
   userId: string
   projectId?: string
   folderId?: string | null
+  workspaceId?: string | null // null = Personal space
   title: string
   model: string
   provider: string
@@ -94,10 +97,11 @@ export interface ConversationWithBranches extends Conversation {
 
 class ConversationApiClient {
   /**
-   * Get all conversations for a user
+   * Get all conversations for a user in a workspace
    */
   async getUserConversations(
     userId: string,
+    workspaceId: string | null,
     options?: {
       projectId?: string
       archived?: boolean
@@ -106,6 +110,8 @@ class ConversationApiClient {
     }
   ): Promise<Conversation[]> {
     const params = new URLSearchParams({ userId })
+    // Pass 'null' string to indicate Personal space
+    params.set('workspaceId', workspaceId === null ? 'null' : workspaceId)
     if (options?.projectId) params.set('projectId', options.projectId)
     if (options?.archived) params.set('archived', 'true')
     if (options?.limit) params.set('limit', options.limit.toString())
@@ -123,16 +129,18 @@ class ConversationApiClient {
   }
 
   /**
-   * Get pinned conversations for a user
+   * Get pinned conversations for a user in a workspace
    */
   async getPinnedConversations(
     userId: string,
+    workspaceId: string | null,
     options?: {
       projectId?: string
       limit?: number
     }
   ): Promise<Conversation[]> {
     const params = new URLSearchParams({ userId, pinned: 'true' })
+    params.set('workspaceId', workspaceId === null ? 'null' : workspaceId)
     if (options?.projectId) params.set('projectId', options.projectId)
     if (options?.limit) params.set('limit', options.limit.toString())
 
@@ -148,15 +156,17 @@ class ConversationApiClient {
   }
 
   /**
-   * Get recent conversations without a project
+   * Get recent conversations without a project in a workspace
    */
   async getRecentConversations(
     userId: string,
+    workspaceId: string | null,
     options?: {
       limit?: number
     }
   ): Promise<Conversation[]> {
     const params = new URLSearchParams({ userId, recent: 'true' })
+    params.set('workspaceId', workspaceId === null ? 'null' : workspaceId)
     if (options?.limit) params.set('limit', options.limit.toString())
 
     const response = await fetch(`${API_BASE}?${params}`)
@@ -171,10 +181,11 @@ class ConversationApiClient {
   }
 
   /**
-   * Search conversations
+   * Search conversations in a workspace
    */
   async searchConversations(
     userId: string,
+    workspaceId: string | null,
     query: string,
     options?: {
       projectId?: string
@@ -184,6 +195,7 @@ class ConversationApiClient {
     }
   ): Promise<Conversation[]> {
     const params = new URLSearchParams({ userId, search: query })
+    params.set('workspaceId', workspaceId === null ? 'null' : workspaceId)
     if (options?.projectId) params.set('projectId', options.projectId)
     if (options?.folderId) params.set('folderId', options.folderId)
     if (options?.includeArchived) params.set('archived', 'true')

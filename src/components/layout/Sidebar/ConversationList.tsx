@@ -21,6 +21,7 @@ import {
   useConversationsInitialized,
   useProjectLoading,
   useProjectsInitialized,
+  useActiveWorkspaceId,
 } from '@/stores'
 import { SearchBar } from './SearchBar'
 import { PinnedSection } from './PinnedSection'
@@ -35,10 +36,11 @@ import type { Conversation, FolderTreeNode } from '@/types'
 
 export function ConversationList() {
   const router = useRouter()
-  const conversations = useConversations()
-  const pinnedConversations = usePinnedConversations()
-  const recentConversations = useRecentConversations(10)
-  const projects = useProjects()
+  const activeWorkspaceId = useActiveWorkspaceId()
+  const conversations = useConversations(activeWorkspaceId)
+  const pinnedConversations = usePinnedConversations(activeWorkspaceId)
+  const recentConversations = useRecentConversations(10, activeWorkspaceId)
+  const projects = useProjects(activeWorkspaceId)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
   const isLoading = useChatLoading()
   const isInitialized = useConversationsInitialized()
@@ -198,10 +200,10 @@ export function ConversationList() {
 
   const handleCreateConversation = useCallback(
     async (projectId: string, folderId?: string) => {
-      const id = await createConversation('New conversation', projectId, undefined, folderId || null)
+      const id = await createConversation('New conversation', projectId, undefined, folderId || null, activeWorkspaceId)
       router.push(`/chat/${id}`)
     },
-    [router, createConversation]
+    [router, createConversation, activeWorkspaceId]
   )
 
   const handleSubmitCreateFolder = useCallback(
@@ -374,7 +376,7 @@ export function ConversationList() {
             variant="outline"
             size="sm"
             onClick={async () => {
-              const id = await createConversation('New conversation')
+              const id = await createConversation('New conversation', undefined, undefined, null, activeWorkspaceId)
               router.push(`/chat/${id}`)
             }}
           >

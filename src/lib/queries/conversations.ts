@@ -10,11 +10,15 @@ import type { Conversation, Message } from '@/types'
 // Queries
 // ============================================================================
 
-export function useConversations(filters: { userId: string; projectId?: string }) {
+export function useConversations(filters: {
+  userId: string
+  workspaceId: string | null
+  projectId?: string
+}) {
   return useQuery({
     queryKey: queryKeys.conversations.list(filters),
     queryFn: () =>
-      conversationApi.getUserConversations(filters.userId, {
+      conversationApi.getUserConversations(filters.userId, filters.workspaceId, {
         projectId: filters.projectId,
       }),
     enabled: !!filters.userId,
@@ -37,20 +41,28 @@ export function useMessages(conversationId: string | null) {
   })
 }
 
-export function usePinnedConversations(userId: string, projectId?: string) {
+export function usePinnedConversations(
+  userId: string,
+  workspaceId: string | null,
+  projectId?: string
+) {
   return useQuery({
-    queryKey: queryKeys.conversations.pinned(userId, projectId),
+    queryKey: queryKeys.conversations.pinned(userId, workspaceId, projectId),
     queryFn: () =>
-      conversationApi.getPinnedConversations(userId, { projectId }),
+      conversationApi.getPinnedConversations(userId, workspaceId, { projectId }),
     enabled: !!userId,
   })
 }
 
-export function useRecentConversations(userId: string, limit = 10) {
+export function useRecentConversations(
+  userId: string,
+  workspaceId: string | null,
+  limit = 10
+) {
   return useQuery({
-    queryKey: queryKeys.conversations.recent(userId),
+    queryKey: queryKeys.conversations.recent(userId, workspaceId),
     queryFn: () =>
-      conversationApi.getRecentConversations(userId, { limit }),
+      conversationApi.getRecentConversations(userId, workspaceId, { limit }),
     enabled: !!userId,
   })
 }

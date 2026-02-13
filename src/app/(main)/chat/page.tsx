@@ -3,14 +3,15 @@
 import { useRouter } from 'next/navigation'
 import { MessageSquarePlus, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { useChatActions } from '@/stores'
+import { useChatActions, useActiveWorkspaceId } from '@/stores'
 
 export default function ChatPage() {
   const router = useRouter()
   const { createConversation, setActiveConversation } = useChatActions()
+  const activeWorkspaceId = useActiveWorkspaceId()
 
   const handleNewChat = async () => {
-    const id = await createConversation()
+    const id = await createConversation(undefined, undefined, undefined, null, activeWorkspaceId)
     setActiveConversation(id)
     router.push(`/chat/${id}`)
   }
