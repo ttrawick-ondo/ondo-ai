@@ -87,6 +87,24 @@ export function ConversationList() {
     }, {} as Record<string, Conversation>)
   }, [conversations])
 
+  // Build parent-to-branches map
+  const branchesByParent = useMemo(() => {
+    const map: Record<string, Conversation[]> = {}
+    for (const conv of conversations) {
+      if (conv.parentId) {
+        if (!map[conv.parentId]) map[conv.parentId] = []
+        map[conv.parentId].push(conv)
+      }
+    }
+    // Sort branches by lastMessageAt descending
+    for (const parentId of Object.keys(map)) {
+      map[parentId].sort(
+        (a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()
+      )
+    }
+    return map
+  }, [conversations])
+
   // Filter conversations based on search and quick filter
   const filteredConversations = useMemo(() => {
     let result = conversations
@@ -122,7 +140,7 @@ export function ConversationList() {
     const result: Record<string, Conversation[]> = {}
     for (const project of projects) {
       result[project.id] = filteredConversations
-        .filter((c) => c.projectId === project.id && !c.folderId)
+        .filter((c) => c.projectId === project.id && !c.folderId && !c.parentId)
         .sort(
           (a, b) =>
             new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()
@@ -273,17 +291,16 @@ export function ConversationList() {
 
   // Filtered pinned and recent for quick filter
   const filteredPinned = useMemo(() => {
+    let result = pinnedConversations.filter((c) => !c.parentId)
     if (searchQuery) {
       const query = searchQuery.toLowerCase()
-      return pinnedConversations.filter((c) =>
-        c.title.toLowerCase().includes(query)
-      )
+      result = result.filter((c) => c.title.toLowerCase().includes(query))
     }
-    return pinnedConversations
+    return result
   }, [pinnedConversations, searchQuery])
 
   const filteredRecent = useMemo(() => {
-    let result = recentConversations
+    let result = recentConversations.filter((c) => !c.parentId)
 
     if (searchQuery) {
       const query = searchQuery.toLowerCase()
@@ -418,6 +435,7 @@ export function ConversationList() {
               <div className="p-2">
                 <PinnedSection
                   conversations={filteredPinned}
+                  branchesByParent={branchesByParent}
                   selectedConversationId={activeConversationId}
                   focusedConversationId={focusedConversationId}
                   onSelectConversation={handleSelectConversation}
@@ -451,6 +469,7 @@ export function ConversationList() {
                   folders={foldersByProject[project.id] || []}
                   conversations={conversationsRecord}
                   unorganizedConversations={unorganizedByProject[project.id] || []}
+                  branchesByParent={branchesByParent}
                   selectedConversationId={activeConversationId}
                   onSelectConversation={handleSelectConversation}
                   onCreateFolder={handleCreateFolder}
@@ -486,6 +505,12 @@ export function ConversationList() {
                     onDelete={() => handleDeleteConversation(conv.id)}
                     onPin={() => handlePinConversation(conv.id)}
                     onMove={() => handleMoveConversation(conv.id)}
+                    branches={branchesByParent[conv.id]}
+                    selectedConversationId={activeConversationId}
+                    onSelectConversation={handleSelectConversation}
+                    onDeleteConversation={handleDeleteConversation}
+                    onPinConversation={handlePinConversation}
+                    onMoveConversation={handleMoveConversation}
                     enableDragDrop={true}
                   />
                 ))}

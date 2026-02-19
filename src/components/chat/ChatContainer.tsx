@@ -101,7 +101,7 @@ export function ChatContainer({ conversationId, initialBranchId = null }: ChatCo
           <MessageList
             messages={messages}
             streamingMessage={isStreaming ? streamingMessage : undefined}
-            onBranch={handleBranch}
+            onBranch={isBranchView ? undefined : handleBranch}
           />
           {isStreaming && !streamingMessage && <TypingIndicator />}
         </div>

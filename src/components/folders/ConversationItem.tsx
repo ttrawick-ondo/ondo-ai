@@ -10,6 +10,8 @@ import {
   PinOff,
   MoveRight,
   GitBranch,
+  ChevronRight,
+  ChevronDown,
 } from 'lucide-react'
 import { useDraggable } from '@dnd-kit/core'
 import { cn, formatRelativeTime } from '@/lib/utils'
@@ -36,6 +38,12 @@ interface ConversationItemProps {
   showBranchIndicator?: boolean
   showTime?: boolean
   enableDragDrop?: boolean
+  branches?: Conversation[]
+  selectedConversationId?: string | null
+  onSelectConversation?: (id: string) => void
+  onDeleteConversation?: (id: string) => void
+  onPinConversation?: (id: string) => void
+  onMoveConversation?: (id: string) => void
 }
 
 export function ConversationItem({
@@ -51,9 +59,17 @@ export function ConversationItem({
   showBranchIndicator = true,
   showTime = true,
   enableDragDrop = false,
+  branches,
+  selectedConversationId,
+  onSelectConversation,
+  onDeleteConversation,
+  onPinConversation,
+  onMoveConversation,
 }: ConversationItemProps) {
   const [isHovered, setIsHovered] = useState(false)
+  const [isBranchesExpanded, setIsBranchesExpanded] = useState(false)
   const isBranch = !!conversation.parentId
+  const hasBranches = branches && branches.length > 0
 
   // Drag hook
   const {
@@ -71,6 +87,7 @@ export function ConversationItem({
   })
 
   return (
+    <>
     <div
       ref={setNodeRef}
       className={cn(
@@ -81,13 +98,30 @@ export function ConversationItem({
         isFocused && !isSelected && 'ring-1 ring-primary/50 bg-muted/50',
         isDragging && 'opacity-50'
       )}
-      style={{ paddingLeft: `${(depth + 1) * 12 + 16}px` }}
+      style={{ paddingLeft: `${(depth + 1) * 12 + (hasBranches ? 4 : 16)}px` }}
       onClick={onSelect}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       {...(enableDragDrop ? attributes : {})}
       {...(enableDragDrop ? listeners : {})}
     >
+      {/* Branch expand chevron */}
+      {hasBranches && (
+        <button
+          className="shrink-0 p-0.5 rounded hover:bg-accent"
+          onClick={(e) => {
+            e.stopPropagation()
+            setIsBranchesExpanded(!isBranchesExpanded)
+          }}
+        >
+          {isBranchesExpanded ? (
+            <ChevronDown className="h-3 w-3" />
+          ) : (
+            <ChevronRight className="h-3 w-3" />
+          )}
+        </button>
+      )}
+
       {/* Branch indicator or message icon */}
       <div className="shrink-0 flex items-center gap-1">
         {isBranch && showBranchIndicator ? (
@@ -168,5 +202,25 @@ export function ConversationItem({
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
+
+    {/* Expanded branch conversations */}
+    {hasBranches && isBranchesExpanded && (
+      <div className="flex flex-col gap-0.5">
+        {branches!.map((branch) => (
+          <ConversationItem
+            key={branch.id}
+            conversation={branch}
+            depth={depth + 1}
+            isSelected={branch.id === selectedConversationId}
+            onSelect={() => { onSelectConversation?.(branch.id) }}
+            onDelete={onDeleteConversation ? () => onDeleteConversation(branch.id) : undefined}
+            onPin={onPinConversation ? () => onPinConversation(branch.id) : undefined}
+            onMove={onMoveConversation ? () => onMoveConversation(branch.id) : undefined}
+            enableDragDrop={enableDragDrop}
+          />
+        ))}
+      </div>
+    )}
+    </>
   )
 }

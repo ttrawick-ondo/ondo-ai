@@ -9,6 +9,7 @@ import type { FolderTreeNode, Conversation } from '@/types'
 interface FolderTreeProps {
   folders: FolderTreeNode[]
   conversations: Record<string, Conversation>
+  branchesByParent?: Record<string, Conversation[]>
   onSelectConversation: (id: string) => void
   onSelectFolder?: (id: string) => void
   selectedConversationId?: string | null
@@ -29,6 +30,7 @@ interface FolderTreeProps {
 export function FolderTree({
   folders,
   conversations,
+  branchesByParent,
   onSelectConversation,
   onSelectFolder,
   selectedConversationId,
@@ -51,6 +53,7 @@ export function FolderTree({
           key={folder.id}
           folder={folder}
           conversations={conversations}
+          branchesByParent={branchesByParent}
           onSelectConversation={onSelectConversation}
           onSelectFolder={onSelectFolder}
           selectedConversationId={selectedConversationId}
@@ -74,6 +77,7 @@ export function FolderTree({
 interface FolderTreeNodeProps {
   folder: FolderTreeNode
   conversations: Record<string, Conversation>
+  branchesByParent?: Record<string, Conversation[]>
   onSelectConversation: (id: string) => void
   onSelectFolder?: (id: string) => void
   selectedConversationId?: string | null
@@ -93,6 +97,7 @@ interface FolderTreeNodeProps {
 function FolderTreeNode({
   folder,
   conversations,
+  branchesByParent,
   onSelectConversation,
   onSelectFolder,
   selectedConversationId,
@@ -115,10 +120,10 @@ function FolderTreeNode({
     toggleFolderExpanded(folder.id)
   }, [folder.id, toggleFolderExpanded])
 
-  // Get conversations for this folder
+  // Get conversations for this folder (exclude branches — they render nested under parent)
   const folderConversations = folder.conversations
     .map((id) => conversations[id])
-    .filter(Boolean)
+    .filter((c) => c && !c.parentId)
     .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime())
 
   return (
@@ -141,6 +146,7 @@ function FolderTreeNode({
           key={childFolder.id}
           folder={childFolder}
           conversations={conversations}
+          branchesByParent={branchesByParent}
           onSelectConversation={onSelectConversation}
           onSelectFolder={onSelectFolder}
           selectedConversationId={selectedConversationId}
@@ -170,6 +176,12 @@ function FolderTreeNode({
           onDelete={onDeleteConversation ? () => onDeleteConversation(conv.id) : undefined}
           onPin={onPinConversation ? () => onPinConversation(conv.id) : undefined}
           onMove={onMoveConversation ? () => onMoveConversation(conv.id) : undefined}
+          branches={branchesByParent?.[conv.id]}
+          selectedConversationId={selectedConversationId}
+          onSelectConversation={onSelectConversation}
+          onDeleteConversation={onDeleteConversation}
+          onPinConversation={onPinConversation}
+          onMoveConversation={onMoveConversation}
           enableDragDrop={enableDragDrop}
         />
       ))}

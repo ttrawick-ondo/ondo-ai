@@ -28,6 +28,7 @@ interface ProjectSectionProps {
   folders: FolderTreeNode[]
   conversations: Record<string, Conversation>
   unorganizedConversations: Conversation[]
+  branchesByParent?: Record<string, Conversation[]>
   selectedConversationId?: string | null
   selectedFolderId?: string | null
   onSelectConversation: (id: string) => void
@@ -52,6 +53,7 @@ export function ProjectSection({
   folders,
   conversations,
   unorganizedConversations,
+  branchesByParent,
   selectedConversationId,
   selectedFolderId,
   onSelectConversation,
@@ -240,12 +242,13 @@ export function ProjectSection({
       </div>
 
       {isExpanded && (
-        <div className="ml-2">
+        <div className="ml-2 mt-0.5 space-y-0.5">
           {/* Folder tree */}
           {folders.length > 0 && (
             <FolderTree
               folders={folders}
               conversations={conversations}
+              branchesByParent={branchesByParent}
               selectedConversationId={selectedConversationId}
               selectedFolderId={selectedFolderId}
               onSelectConversation={onSelectConversation}
@@ -285,6 +288,12 @@ export function ProjectSection({
               onMove={
                 onMoveConversation ? () => onMoveConversation(conv.id) : undefined
               }
+              branches={branchesByParent?.[conv.id]}
+              selectedConversationId={selectedConversationId}
+              onSelectConversation={onSelectConversation}
+              onDeleteConversation={onDeleteConversation}
+              onPinConversation={onPinConversation}
+              onMoveConversation={onMoveConversation}
               enableDragDrop={enableDragDrop}
             />
           ))}
