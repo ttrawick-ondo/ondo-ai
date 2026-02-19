@@ -5,17 +5,7 @@ const nextConfig = {
   reactStrictMode: true,
 
   // Configure webpack to handle native modules properly
-  webpack: (config, { isServer }) => {
-    // Handle native modules for Prisma adapter-libsql
-    if (isServer) {
-      config.externals = [
-        ...(config.externals || []),
-        '@libsql/client',
-        '@prisma/adapter-libsql',
-        'libsql',
-      ]
-    }
-
+  webpack: (config) => {
     // Ignore README.md and .node files in node_modules
     config.module.rules.push({
       test: /\.md$/,
@@ -26,15 +16,6 @@ const nextConfig = {
     })
 
     return config
-  },
-
-  // Required for server components with database
-  experimental: {
-    serverComponentsExternalPackages: [
-      '@libsql/client',
-      '@prisma/adapter-libsql',
-      'libsql',
-    ],
   },
 }
 

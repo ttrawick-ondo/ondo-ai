@@ -376,6 +376,20 @@ export const useChatStore = create<ChatStore>()(
                     },
                   }))
                 },
+                onMessagePersisted: (clientId, dbId) => {
+                  if (clientId === dbId) return
+                  set((state) => {
+                    const messages = state.messagesByConversation[targetConversationId] || []
+                    return {
+                      messagesByConversation: {
+                        ...state.messagesByConversation,
+                        [targetConversationId]: messages.map((msg) =>
+                          msg.id === clientId ? { ...msg, id: dbId } : msg
+                        ),
+                      },
+                    }
+                  })
+                },
                 onToolsExecuting: (toolCalls) => {
                   set({ isExecutingTools: true, pendingToolCalls: toolCalls })
                 },

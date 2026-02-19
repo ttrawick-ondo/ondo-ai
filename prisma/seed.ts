@@ -7,14 +7,16 @@
 
 import 'dotenv/config'
 import { PrismaClient } from '../src/generated/prisma'
-import { PrismaLibSql } from '@prisma/adapter-libsql'
+import { PrismaPg } from '@prisma/adapter-pg'
+import { Pool } from 'pg'
 
-// Create Prisma adapter factory
-const adapter = new PrismaLibSql({
-  url: process.env.DATABASE_URL || 'file:./prisma/dev.db',
-})
+const connectionString = process.env.DATABASE_URL
+if (!connectionString) {
+  throw new Error('DATABASE_URL environment variable is required')
+}
 
-// Create Prisma client with adapter
+const pool = new Pool({ connectionString })
+const adapter = new PrismaPg(pool)
 const prisma = new PrismaClient({ adapter })
 
 async function main() {

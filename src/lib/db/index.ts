@@ -4,13 +4,12 @@
  * Provides a single Prisma client instance across the application.
  * In development, the client is cached on globalThis to survive HMR.
  *
- * Uses Prisma with libSQL adapter for both local SQLite files
- * and remote Turso databases.
+ * Uses CockroachDB (PostgreSQL-compatible) via Prisma with pg adapter.
  */
 
 import { PrismaClient } from '@/generated/prisma'
-import { PrismaLibSql } from '@prisma/adapter-libsql'
-import path from 'path'
+import { PrismaPg } from '@prisma/adapter-pg'
+import { Pool } from 'pg'
 
 // Extend globalThis to cache the Prisma client in development
 declare global {
@@ -22,23 +21,13 @@ declare global {
  * Get or create the Prisma client instance
  */
 function createPrismaClient(): PrismaClient {
-  // Get database URL from environment
-  let databaseUrl = process.env.DATABASE_URL || 'file:./prisma/dev.db'
-
-  // For local SQLite files, convert relative path to absolute for libSQL
-  if (databaseUrl.startsWith('file:')) {
-    const filePath = databaseUrl.replace('file:', '')
-    const absolutePath = path.isAbsolute(filePath)
-      ? filePath
-      : path.join(process.cwd(), filePath)
-    databaseUrl = `file:${absolutePath}`
+  const connectionString = process.env.DATABASE_URL
+  if (!connectionString) {
+    throw new Error('DATABASE_URL environment variable is required')
   }
 
-  // Create libSQL adapter
-  const adapter = new PrismaLibSql({
-    url: databaseUrl,
-    authToken: process.env.DATABASE_AUTH_TOKEN,
-  })
+  const pool = new Pool({ connectionString })
+  const adapter = new PrismaPg(pool)
 
   return new PrismaClient({
     adapter,

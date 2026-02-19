@@ -46,6 +46,7 @@ export interface StreamingCallbacks {
   onStreamDelta: (delta: string, fullContent: string) => void
   onStreamComplete: () => void
   onMessageCreated: (message: Message) => void
+  onMessagePersisted: (clientId: string, dbId: string) => void
   onToolsExecuting: (toolCalls: ToolCall[]) => void
   onToolsComplete: (results: ToolExecutionRecord[]) => void
   onRoutingInfo: (info: RoutingInfo) => void
@@ -287,12 +288,15 @@ export async function streamChat(
                 callbacks.onMessageCreated(assistantMessage)
 
                 // Persist assistant message
+                const assistantClientId = assistantMessage.id
                 persistMessage(conversationId, assistantMessage, {
                   provider,
                   inputTokens: response.usage.inputTokens,
                   outputTokens: response.usage.outputTokens,
                   toolCalls: receivedToolCalls,
-                }).catch(console.error)
+                })
+                  .then((dbId) => callbacks.onMessagePersisted(assistantClientId, dbId))
+                  .catch(console.error)
 
                 // Execute tool calls
                 callbacks.onToolsExecuting(receivedToolCalls)
@@ -306,7 +310,10 @@ export async function streamChat(
 
                 for (const toolMsg of toolMessages) {
                   callbacks.onMessageCreated(toolMsg)
-                  persistMessage(conversationId, toolMsg).catch(console.error)
+                  const toolClientId = toolMsg.id
+                  persistMessage(conversationId, toolMsg)
+                    .then((dbId) => callbacks.onMessagePersisted(toolClientId, dbId))
+                    .catch(console.error)
                 }
 
                 // Update apiMessages for next iteration
@@ -346,11 +353,14 @@ export async function streamChat(
                 callbacks.onStreamComplete()
 
                 // Persist final message
+                const finalClientId = finalMessage.id
                 persistMessage(conversationId, finalMessage, {
                   provider,
                   inputTokens: response.usage.inputTokens,
                   outputTokens: response.usage.outputTokens,
-                }).catch(console.error)
+                })
+                  .then((dbId) => callbacks.onMessagePersisted(finalClientId, dbId))
+                  .catch(console.error)
 
                 resolve({ success: true, finalMessage })
               }
