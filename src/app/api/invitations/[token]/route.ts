@@ -4,6 +4,7 @@ import {
   acceptWorkspaceInvitation,
   getWorkspaceMember,
 } from '@/lib/db/services/workspace'
+import { requireSession, unauthorizedResponse } from '@/lib/auth/session'
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic'
@@ -15,6 +16,9 @@ interface RouteParams {
 // GET /api/invitations/:token - Get invitation details
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const { token } = await params
 
     const invitation = await getWorkspaceInvitationByToken(token)
@@ -65,18 +69,13 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 }
 
 // POST /api/invitations/:token - Accept invitation
-export async function POST(request: NextRequest, { params }: RouteParams) {
+export async function POST(_request: NextRequest, { params }: RouteParams) {
   try {
-    const { token } = await params
-    const body = await request.json()
-    const { userId } = body
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+    const userId = session.user.id
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'userId is required' },
-        { status: 400 }
-      )
-    }
+    const { token } = await params
 
     // Get invitation to check workspace
     const invitation = await getWorkspaceInvitationByToken(token)
@@ -110,9 +109,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     })
   } catch (error) {
     console.error('Error accepting invitation:', error)
-    const message = error instanceof Error ? error.message : 'Failed to accept invitation'
     return NextResponse.json(
-      { error: message },
+      { error: 'Failed to accept invitation' },
       { status: 500 }
     )
   }

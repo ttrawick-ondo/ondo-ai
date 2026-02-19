@@ -6,6 +6,8 @@ import {
   updateMemberRole,
   removeWorkspaceMember,
 } from '@/lib/db/services/workspace'
+import { validateWorkspaceAccess } from '@/lib/auth/workspace'
+import { requireSession, unauthorizedResponse, forbiddenResponse } from '@/lib/auth/session'
 
 interface RouteParams {
   params: Promise<{ workspaceId: string }>
@@ -14,7 +16,13 @@ interface RouteParams {
 // GET /api/workspaces/:workspaceId/members - Get workspace members
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const { workspaceId } = await params
+
+    const hasAccess = await validateWorkspaceAccess(workspaceId, session.user.id)
+    if (!hasAccess) return forbiddenResponse()
 
     const members = await getWorkspaceMembers(workspaceId)
 
@@ -31,7 +39,14 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 // POST /api/workspaces/:workspaceId/members - Add a member
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const { workspaceId } = await params
+
+    const hasAccess = await validateWorkspaceAccess(workspaceId, session.user.id)
+    if (!hasAccess) return forbiddenResponse()
+
     const body = await request.json()
     const { userId, role } = body
 
@@ -66,7 +81,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 // PATCH /api/workspaces/:workspaceId/members - Update member role
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const { workspaceId } = await params
+
+    const hasAccess = await validateWorkspaceAccess(workspaceId, session.user.id)
+    if (!hasAccess) return forbiddenResponse()
+
     const body = await request.json()
     const { userId, role } = body
 
@@ -92,7 +114,14 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 // DELETE /api/workspaces/:workspaceId/members - Remove a member
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const { workspaceId } = await params
+
+    const hasAccess = await validateWorkspaceAccess(workspaceId, session.user.id)
+    if (!hasAccess) return forbiddenResponse()
+
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get('userId')
 
@@ -108,9 +137,8 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Error removing member:', error)
-    const message = error instanceof Error ? error.message : 'Failed to remove member'
     return NextResponse.json(
-      { error: message },
+      { error: 'Failed to remove member' },
       { status: 500 }
     )
   }

@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getGleanSearchService } from '@/lib/api/glean'
+import { requireSession, unauthorizedResponse } from '@/lib/auth/session'
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const body = await request.json()
 
     if (!body.query || body.query.trim().length === 0) {
@@ -26,7 +30,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Glean search error:', error)
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Search failed' },
+      { error: 'Search failed' },
       { status: 500 }
     )
   }
@@ -34,6 +38,9 @@ export async function POST(request: NextRequest) {
 
 export async function GET() {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const searchService = getGleanSearchService()
     const dataSources = await searchService.listDataSources()
 
@@ -44,7 +51,7 @@ export async function GET() {
   } catch (error) {
     console.error('Failed to list data sources:', error)
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to list data sources' },
+      { error: 'Failed to list data sources' },
       { status: 500 }
     )
   }

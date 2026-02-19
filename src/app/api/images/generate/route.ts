@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDALLEService, type ImageGenerationRequest } from '@/lib/api/images'
+import { requireSession, unauthorizedResponse } from '@/lib/auth/session'
+import { checkRateLimit, rateLimitResponse } from '@/lib/auth/rate-limit'
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
+    // Rate limit: 10 requests per minute per user
+    const { limited, resetMs } = checkRateLimit(`images:${session.user.id}`, 10)
+    if (limited) return rateLimitResponse(resetMs)
+
     const body = await request.json() as ImageGenerationRequest
 
     if (!body.prompt || body.prompt.trim().length === 0) {
@@ -22,7 +31,7 @@ export async function POST(request: NextRequest) {
 
     if (!result.success) {
       return NextResponse.json(
-        { error: result.error },
+        { error: 'Image generation failed' },
         { status: 500 }
       )
     }
@@ -34,7 +43,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Image generation error:', error)
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to generate image' },
+      { error: 'Failed to generate image' },
       { status: 500 }
     )
   }

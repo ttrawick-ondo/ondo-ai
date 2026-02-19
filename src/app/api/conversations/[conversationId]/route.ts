@@ -9,8 +9,20 @@ import {
   toggleConversationPin,
 } from '@/lib/db/services/conversation'
 import { validateWorkspaceAccess } from '@/lib/auth/workspace'
+import { requireSession, unauthorizedResponse, forbiddenResponse } from '@/lib/auth/session'
 
 type RouteContext = { params: Promise<{ conversationId: string }> }
+
+/**
+ * Verify the session user owns or has workspace access to a conversation.
+ */
+async function authorizeConversation(conversation: { userId: string; workspaceId: string | null }, sessionUserId: string) {
+  if (conversation.userId === sessionUserId) return true
+  if (conversation.workspaceId) {
+    return validateWorkspaceAccess(conversation.workspaceId, sessionUserId)
+  }
+  return false
+}
 
 // GET /api/conversations/[conversationId] - Get a single conversation
 export async function GET(
@@ -18,11 +30,13 @@ export async function GET(
   context: RouteContext
 ) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const { conversationId } = await context.params
     const { searchParams } = new URL(request.url)
     const includeMessages = searchParams.get('messages') === 'true'
     const includeBranches = searchParams.get('branches') === 'true'
-    const userId = searchParams.get('userId')
 
     let conversation
     if (includeBranches) {
@@ -40,15 +54,8 @@ export async function GET(
       )
     }
 
-    // Validate workspace access if user is provided and conversation belongs to a workspace
-    if (userId && conversation.workspaceId) {
-      const hasAccess = await validateWorkspaceAccess(conversation.workspaceId, userId)
-      if (!hasAccess) {
-        return NextResponse.json(
-          { error: 'Access denied to this conversation' },
-          { status: 403 }
-        )
-      }
+    if (!(await authorizeConversation(conversation, session.user.id))) {
+      return forbiddenResponse()
     }
 
     return NextResponse.json({ data: conversation })
@@ -67,11 +74,13 @@ export async function PATCH(
   context: RouteContext
 ) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const { conversationId } = await context.params
     const body = await request.json()
-    const { userId } = body
 
-    // Get the current conversation to check workspace access
+    // Get the current conversation to check ownership
     const existingConversation = await getConversation(conversationId)
     if (!existingConversation) {
       return NextResponse.json(
@@ -80,15 +89,8 @@ export async function PATCH(
       )
     }
 
-    // Validate workspace access if user is provided
-    if (userId && existingConversation.workspaceId) {
-      const hasAccess = await validateWorkspaceAccess(existingConversation.workspaceId, userId)
-      if (!hasAccess) {
-        return NextResponse.json(
-          { error: 'Access denied to this conversation' },
-          { status: 403 }
-        )
-      }
+    if (!(await authorizeConversation(existingConversation, session.user.id))) {
+      return forbiddenResponse()
     }
 
     // Handle archive operation
@@ -107,8 +109,8 @@ export async function PATCH(
 
     // If changing workspace, validate access to new workspace
     if (workspaceId !== undefined && workspaceId !== existingConversation.workspaceId) {
-      if (workspaceId && userId) {
-        const hasAccessToNewWorkspace = await validateWorkspaceAccess(workspaceId, userId)
+      if (workspaceId) {
+        const hasAccessToNewWorkspace = await validateWorkspaceAccess(workspaceId, session.user.id)
         if (!hasAccessToNewWorkspace) {
           return NextResponse.json(
             { error: 'Access denied to the target workspace' },
@@ -147,11 +149,12 @@ export async function DELETE(
   context: RouteContext
 ) {
   try {
-    const { conversationId } = await context.params
-    const { searchParams } = new URL(request.url)
-    const userId = searchParams.get('userId')
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
 
-    // Get the current conversation to check workspace access
+    const { conversationId } = await context.params
+
+    // Get the current conversation to check ownership
     const existingConversation = await getConversation(conversationId)
     if (!existingConversation) {
       return NextResponse.json(
@@ -160,15 +163,8 @@ export async function DELETE(
       )
     }
 
-    // Validate workspace access if user is provided
-    if (userId && existingConversation.workspaceId) {
-      const hasAccess = await validateWorkspaceAccess(existingConversation.workspaceId, userId)
-      if (!hasAccess) {
-        return NextResponse.json(
-          { error: 'Access denied to this conversation' },
-          { status: 403 }
-        )
-      }
+    if (!(await authorizeConversation(existingConversation, session.user.id))) {
+      return forbiddenResponse()
     }
 
     await deleteConversation(conversationId)

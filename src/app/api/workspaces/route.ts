@@ -4,20 +4,17 @@ import {
   getUserWorkspaces,
   getUserWorkspacesWithRole,
 } from '@/lib/db/services/workspace'
+import { requireSession, unauthorizedResponse } from '@/lib/auth/session'
 
 // GET /api/workspaces - Get workspaces for user
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const userId = searchParams.get('userId')
-    const includeRole = searchParams.get('includeRole') === 'true'
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+    const userId = session.user.id
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'userId is required' },
-        { status: 400 }
-      )
-    }
+    const { searchParams } = new URL(request.url)
+    const includeRole = searchParams.get('includeRole') === 'true'
 
     const workspaces = includeRole
       ? await getUserWorkspacesWithRole(userId)
@@ -36,12 +33,16 @@ export async function GET(request: NextRequest) {
 // POST /api/workspaces - Create a new workspace
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { name, description, ownerId, settings } = body
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+    const userId = session.user.id
 
-    if (!name || !ownerId) {
+    const body = await request.json()
+    const { name, description, settings } = body
+
+    if (!name) {
       return NextResponse.json(
-        { error: 'name and ownerId are required' },
+        { error: 'name is required' },
         { status: 400 }
       )
     }
@@ -49,7 +50,7 @@ export async function POST(request: NextRequest) {
     const workspace = await createWorkspace({
       name,
       description,
-      ownerId,
+      ownerId: userId,
       settings,
     })
 

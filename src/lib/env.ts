@@ -40,12 +40,12 @@ const serverEnvSchema = z.object({
   SENTRY_DSN: z.string().optional(),
   APP_VERSION: z.string().optional(),
 
-  // Auth (for future Okta integration)
+  // Auth (Okta integration)
   NEXTAUTH_URL: z.string().url().optional(),
-  NEXTAUTH_SECRET: z.string().optional(),
-  OKTA_CLIENT_ID: z.string().optional(),
-  OKTA_CLIENT_SECRET: z.string().optional(),
-  OKTA_ISSUER: z.string().url().optional(),
+  NEXTAUTH_SECRET: z.string().min(1, 'NEXTAUTH_SECRET is required'),
+  OKTA_CLIENT_ID: z.string().min(1, 'OKTA_CLIENT_ID is required'),
+  OKTA_CLIENT_SECRET: z.string().min(1, 'OKTA_CLIENT_SECRET is required'),
+  OKTA_ISSUER: z.string().url('OKTA_ISSUER must be a valid URL'),
 })
 
 const clientEnvSchema = z.object({

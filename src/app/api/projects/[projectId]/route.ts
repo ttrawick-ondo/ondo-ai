@@ -8,8 +8,21 @@ import {
   archiveProject,
   unarchiveProject,
 } from '@/lib/db/services/project'
+import { validateWorkspaceAccess } from '@/lib/auth/workspace'
+import { requireSession, unauthorizedResponse, forbiddenResponse } from '@/lib/auth/session'
 
 type RouteContext = { params: Promise<{ projectId: string }> }
+
+/**
+ * Verify the session user owns or has workspace access to a project.
+ */
+async function authorizeProject(project: { ownerId: string; workspaceId: string | null }, sessionUserId: string) {
+  if (project.ownerId === sessionUserId) return true
+  if (project.workspaceId) {
+    return validateWorkspaceAccess(project.workspaceId, sessionUserId)
+  }
+  return false
+}
 
 // GET /api/projects/[projectId] - Get a single project
 export async function GET(
@@ -17,6 +30,9 @@ export async function GET(
   context: RouteContext
 ) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const { projectId } = await context.params
     const { searchParams } = new URL(request.url)
     const includeRelations = searchParams.get('relations') === 'true'
@@ -38,6 +54,10 @@ export async function GET(
       )
     }
 
+    if (!(await authorizeProject(project, session.user.id))) {
+      return forbiddenResponse()
+    }
+
     return NextResponse.json({ data: project })
   } catch (error) {
     console.error('Error fetching project:', error)
@@ -54,7 +74,23 @@ export async function PATCH(
   context: RouteContext
 ) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const { projectId } = await context.params
+
+    const existingProject = await getProject(projectId)
+    if (!existingProject) {
+      return NextResponse.json(
+        { error: 'Project not found' },
+        { status: 404 }
+      )
+    }
+
+    if (!(await authorizeProject(existingProject, session.user.id))) {
+      return forbiddenResponse()
+    }
+
     const body = await request.json()
 
     // Check if this is an archive/unarchive operation
@@ -92,7 +128,22 @@ export async function DELETE(
   context: RouteContext
 ) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const { projectId } = await context.params
+
+    const existingProject = await getProject(projectId)
+    if (!existingProject) {
+      return NextResponse.json(
+        { error: 'Project not found' },
+        { status: 404 }
+      )
+    }
+
+    if (!(await authorizeProject(existingProject, session.user.id))) {
+      return forbiddenResponse()
+    }
 
     await deleteProject(projectId)
 

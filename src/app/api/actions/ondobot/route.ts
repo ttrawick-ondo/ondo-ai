@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getProvider } from '@/lib/api/providers'
 import { OndoBotProvider } from '@/lib/api/providers/ondobot'
+import { requireSession } from '@/lib/auth/session'
 
 /**
  * OndoBot Action Handler
@@ -47,22 +48,18 @@ function getOndoBotHeaders(): Record<string, string> {
 }
 
 /**
- * Validate the authentication for OndoBot actions
+ * Validate the authentication for OndoBot actions.
+ *
+ * Authentication sources (in priority order):
+ * 1. Session cookie (browser requests from authenticated users)
+ * 2. Internal API key (ACTIONS_API_KEY)
+ * 3. OndoBot-specific key (ONDOBOT_API_KEY)
+ * 4. Glean agent token (validated against GLEAN_API_KEY)
  */
 async function validateOndoBotAuth(request: NextRequest): Promise<boolean> {
-  // Allow same-origin browser requests (for UI components like ParentSelectionResult)
-  // These are protected by CORS and don't need Bearer token
-  const origin = request.headers.get('origin')
-  const referer = request.headers.get('referer')
-  const host = request.headers.get('host')
-
-  // If request comes from same origin (browser), allow it
-  if (origin && host && (origin.includes(host) || origin.includes('localhost'))) {
-    return true
-  }
-  if (referer && host && (referer.includes(host) || referer.includes('localhost'))) {
-    return true
-  }
+  // Check for session-based auth first (browser requests)
+  const session = await requireSession()
+  if (session) return true
 
   // For external API requests, require Bearer token
   const authHeader = request.headers.get('authorization')
@@ -85,8 +82,9 @@ async function validateOndoBotAuth(request: NextRequest): Promise<boolean> {
     return true
   }
 
-  // Check Glean agent token
-  if (token.startsWith('glean-')) {
+  // Validate Glean agent token against actual GLEAN_API_KEY
+  const gleanApiKey = process.env.GLEAN_API_KEY
+  if (gleanApiKey && token === gleanApiKey) {
     return true
   }
 
@@ -177,12 +175,11 @@ async function executeOndoBotAction(
       })
 
       if (!response.ok) {
-        const errorText = await response.text()
         return {
           success: false,
           error: {
             code: 'AUTOMATION_FAILED',
-            message: `Automation failed: ${errorText}`,
+            message: 'Automation execution failed',
           },
         }
       }
@@ -202,12 +199,11 @@ async function executeOndoBotAction(
       })
 
       if (!response.ok) {
-        const errorText = await response.text()
         return {
           success: false,
           error: {
             code: 'QUERY_FAILED',
-            message: `Query failed: ${errorText}`,
+            message: 'Data query failed',
           },
         }
       }
@@ -257,7 +253,6 @@ async function executeOndoBotAction(
     // ==================== Tool API Actions ====================
 
     case 'execute_tool': {
-      // Execute any OndoBot tool via the Tool API
       const toolName = parameters.tool as string
       const toolParams = (parameters.params as Record<string, unknown>) || {}
       const userEmail = parameters.userEmail as string | undefined
@@ -289,7 +284,6 @@ async function executeOndoBotAction(
     }
 
     case 'list_tools': {
-      // List all available OndoBot tools
       const response = await fetch(`${baseUrl}/api/v1/tools`, {
         headers,
       })
@@ -309,7 +303,6 @@ async function executeOndoBotAction(
     }
 
     case 'search_ownership': {
-      // Convenience action for ownership search
       const query = parameters.query as string
       const limit = parameters.limit as number | undefined
 
@@ -334,7 +327,6 @@ async function executeOndoBotAction(
     }
 
     case 'list_owner_areas': {
-      // List areas for a specific owner
       const owner = parameters.owner as string
 
       if (!owner) {
@@ -361,7 +353,6 @@ async function executeOndoBotAction(
     }
 
     case 'search_candidates': {
-      // Convenience action for candidate search
       const query = parameters.query as string
       const limit = parameters.limit as number | undefined
 
@@ -386,7 +377,6 @@ async function executeOndoBotAction(
     }
 
     case 'get_candidate_profile': {
-      // Get detailed candidate profile
       const candidateId = parameters.candidate_id as string
 
       if (!candidateId) {
@@ -496,7 +486,7 @@ export async function POST(request: NextRequest) {
         success: false,
         error: {
           code: 'INTERNAL_ERROR',
-          message: error instanceof Error ? error.message : 'Action execution failed',
+          message: 'Action execution failed',
         },
       },
       { status: 500 }

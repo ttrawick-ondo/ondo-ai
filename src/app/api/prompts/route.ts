@@ -6,12 +6,17 @@ import {
   searchPrompts,
   getPromptCategories,
 } from '@/lib/db/services/prompt'
+import { validateWorkspaceAccess } from '@/lib/auth/workspace'
+import { requireSession, unauthorizedResponse } from '@/lib/auth/session'
 
 // GET /api/prompts - Get prompts
 export async function GET(request: NextRequest) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+    const userId = session.user.id
+
     const { searchParams } = new URL(request.url)
-    const userId = searchParams.get('userId')
     const workspaceId = searchParams.get('workspaceId')
     const category = searchParams.get('category')
     const search = searchParams.get('search')
@@ -19,6 +24,17 @@ export async function GET(request: NextRequest) {
     const includePublic = searchParams.get('includePublic') === 'true'
     const limit = searchParams.get('limit')
     const offset = searchParams.get('offset')
+
+    // Validate workspace access if specified
+    if (workspaceId) {
+      const hasAccess = await validateWorkspaceAccess(workspaceId, userId)
+      if (!hasAccess) {
+        return NextResponse.json(
+          { error: 'Access denied to this workspace' },
+          { status: 403 }
+        )
+      }
+    }
 
     // Get categories only
     if (categories) {
@@ -29,7 +45,7 @@ export async function GET(request: NextRequest) {
     // Search mode
     if (search) {
       const prompts = await searchPrompts(search, {
-        userId: userId || undefined,
+        userId,
         workspaceId: workspaceId || undefined,
         category: category || undefined,
         includePublic,
@@ -50,19 +66,12 @@ export async function GET(request: NextRequest) {
     }
 
     // User prompts
-    if (userId) {
-      const prompts = await getUserPrompts(userId, {
-        category: category || undefined,
-        limit: limit ? parseInt(limit, 10) : undefined,
-        offset: offset ? parseInt(offset, 10) : undefined,
-      })
-      return NextResponse.json({ data: prompts })
-    }
-
-    return NextResponse.json(
-      { error: 'userId or workspaceId is required' },
-      { status: 400 }
-    )
+    const prompts = await getUserPrompts(userId, {
+      category: category || undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+      offset: offset ? parseInt(offset, 10) : undefined,
+    })
+    return NextResponse.json({ data: prompts })
   } catch (error) {
     console.error('Error fetching prompts:', error)
     return NextResponse.json(
@@ -75,9 +84,12 @@ export async function GET(request: NextRequest) {
 // POST /api/prompts - Create a new prompt
 export async function POST(request: NextRequest) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+    const userId = session.user.id
+
     const body = await request.json()
     const {
-      userId,
       workspaceId,
       projectId,
       name,
@@ -89,11 +101,22 @@ export async function POST(request: NextRequest) {
       isPublic,
     } = body
 
-    if (!userId || !name || !content) {
+    if (!name || !content) {
       return NextResponse.json(
-        { error: 'userId, name, and content are required' },
+        { error: 'name and content are required' },
         { status: 400 }
       )
+    }
+
+    // Validate workspace access if specified
+    if (workspaceId) {
+      const hasAccess = await validateWorkspaceAccess(workspaceId, userId)
+      if (!hasAccess) {
+        return NextResponse.json(
+          { error: 'Access denied to this workspace' },
+          { status: 403 }
+        )
+      }
     }
 
     const prompt = await createPrompt({

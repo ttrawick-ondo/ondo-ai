@@ -6,14 +6,32 @@ import {
   duplicatePrompt,
   incrementPromptUsage,
 } from '@/lib/db/services/prompt'
+import { validateWorkspaceAccess } from '@/lib/auth/workspace'
+import { requireSession, unauthorizedResponse, forbiddenResponse } from '@/lib/auth/session'
 
 interface RouteParams {
   params: Promise<{ promptId: string }>
 }
 
+/**
+ * Verify the session user owns or has workspace access to a prompt.
+ */
+async function authorizePrompt(prompt: { userId: string; workspaceId: string | null; isPublic: boolean }, sessionUserId: string, requireOwnership = false) {
+  if (prompt.userId === sessionUserId) return true
+  if (requireOwnership) return false
+  if (prompt.isPublic) return true
+  if (prompt.workspaceId) {
+    return validateWorkspaceAccess(prompt.workspaceId, sessionUserId)
+  }
+  return false
+}
+
 // GET /api/prompts/:promptId - Get a prompt
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const { promptId } = await params
 
     const prompt = await getPrompt(promptId)
@@ -23,6 +41,10 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         { error: 'Prompt not found' },
         { status: 404 }
       )
+    }
+
+    if (!(await authorizePrompt(prompt, session.user.id))) {
+      return forbiddenResponse()
     }
 
     return NextResponse.json({ data: prompt })
@@ -38,7 +60,24 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 // PATCH /api/prompts/:promptId - Update a prompt
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const { promptId } = await params
+
+    const existingPrompt = await getPrompt(promptId)
+    if (!existingPrompt) {
+      return NextResponse.json(
+        { error: 'Prompt not found' },
+        { status: 404 }
+      )
+    }
+
+    // Require ownership for mutations
+    if (!(await authorizePrompt(existingPrompt, session.user.id, true))) {
+      return forbiddenResponse()
+    }
+
     const body = await request.json()
 
     // Handle special actions
@@ -72,7 +111,22 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 // DELETE /api/prompts/:promptId - Delete a prompt
 export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const { promptId } = await params
+
+    const existingPrompt = await getPrompt(promptId)
+    if (!existingPrompt) {
+      return NextResponse.json(
+        { error: 'Prompt not found' },
+        { status: 404 }
+      )
+    }
+
+    if (!(await authorizePrompt(existingPrompt, session.user.id, true))) {
+      return forbiddenResponse()
+    }
 
     await deletePrompt(promptId)
 
@@ -87,20 +141,14 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
 }
 
 // POST /api/prompts/:promptId - Duplicate a prompt
-export async function POST(request: NextRequest, { params }: RouteParams) {
+export async function POST(_request: NextRequest, { params }: RouteParams) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const { promptId } = await params
-    const body = await request.json()
-    const { userId } = body
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'userId is required' },
-        { status: 400 }
-      )
-    }
-
-    const prompt = await duplicatePrompt(promptId, userId)
+    const prompt = await duplicatePrompt(promptId, session.user.id)
 
     return NextResponse.json({ data: prompt }, { status: 201 })
   } catch (error) {

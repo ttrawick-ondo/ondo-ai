@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getProvider, GleanProvider } from '@/lib/api/providers'
+import { requireSession, unauthorizedResponse } from '@/lib/auth/session'
 
 interface RouteParams {
   params: Promise<{
@@ -9,14 +10,12 @@ interface RouteParams {
 
 /**
  * GET /api/glean/agents/[agentId]/schemas - Get agent input/output schemas
- *
- * Response:
- * - agentId: The agent ID
- * - inputSchema: JSON schema for agent inputs
- * - outputSchema: JSON schema for agent outputs
  */
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const { agentId } = await params
 
     const gleanProvider = getProvider('glean') as GleanProvider
@@ -40,7 +39,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     return NextResponse.json(
       {
         code: 'INTERNAL_ERROR',
-        message: error instanceof Error ? error.message : 'Failed to get agent schemas',
+        message: 'Failed to get agent schemas',
       },
       { status: 500 }
     )

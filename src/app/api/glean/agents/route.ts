@@ -1,19 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getProvider, GleanProvider } from '@/lib/api/providers'
+import { requireSession, unauthorizedResponse } from '@/lib/auth/session'
 
 /**
  * GET /api/glean/agents - Search/list agents
- *
- * Query params:
- * - query: Optional search query
- * - pageSize: Number of results (default: 20)
- * - cursor: Pagination cursor
- *
- * NOTE: Agent creation is NOT supported via API.
- * Agents must be created via the Glean Agent Builder UI.
  */
 export async function GET(request: NextRequest) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const { searchParams } = new URL(request.url)
     const query = searchParams.get('query') || undefined
     const pageSize = searchParams.get('pageSize')
@@ -46,7 +42,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         code: 'INTERNAL_ERROR',
-        message: error instanceof Error ? error.message : 'Failed to list agents',
+        message: 'Failed to list agents',
       },
       { status: 500 }
     )
@@ -55,8 +51,6 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/glean/agents - Agent creation is NOT supported
- *
- * Returns 501 Not Implemented with instructions to use Glean Agent Builder UI.
  */
 export async function POST() {
   return NextResponse.json(

@@ -2,9 +2,26 @@ import { NextRequest, NextResponse } from 'next/server'
 import {
   getMessages,
   createMessage,
+  getConversation,
 } from '@/lib/db/services/conversation'
+import { validateWorkspaceAccess } from '@/lib/auth/workspace'
+import { requireSession, unauthorizedResponse, forbiddenResponse } from '@/lib/auth/session'
 
 type RouteContext = { params: Promise<{ conversationId: string }> }
+
+/**
+ * Verify the session user owns or has workspace access to a conversation.
+ */
+async function authorizeConversation(conversationId: string, sessionUserId: string) {
+  const conversation = await getConversation(conversationId)
+  if (!conversation) return { authorized: false, notFound: true } as const
+  if (conversation.userId === sessionUserId) return { authorized: true } as const
+  if (conversation.workspaceId) {
+    const hasAccess = await validateWorkspaceAccess(conversation.workspaceId, sessionUserId)
+    if (hasAccess) return { authorized: true } as const
+  }
+  return { authorized: false, notFound: false } as const
+}
 
 // GET /api/conversations/[conversationId]/messages - Get messages for a conversation
 export async function GET(
@@ -12,7 +29,19 @@ export async function GET(
   context: RouteContext
 ) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const { conversationId } = await context.params
+
+    const authResult = await authorizeConversation(conversationId, session.user.id)
+    if (!authResult.authorized) {
+      if ('notFound' in authResult && authResult.notFound) {
+        return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
+      }
+      return forbiddenResponse()
+    }
+
     const { searchParams } = new URL(request.url)
     const limit = searchParams.get('limit')
     const offset = searchParams.get('offset')
@@ -42,10 +71,21 @@ export async function POST(
   context: RouteContext
 ) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const { conversationId } = await context.params
+
+    const authResult = await authorizeConversation(conversationId, session.user.id)
+    if (!authResult.authorized) {
+      if ('notFound' in authResult && authResult.notFound) {
+        return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
+      }
+      return forbiddenResponse()
+    }
+
     const body = await request.json()
     const {
-      userId,
       role,
       content,
       model,
@@ -68,7 +108,7 @@ export async function POST(
 
     const message = await createMessage({
       conversationId,
-      userId,
+      userId: session.user.id,
       role,
       content,
       model,

@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getTaskWithEvents, updateTask, type UpdateTaskInput } from '@/lib/db/services/agent-task'
 import { agentLogger } from '@/lib/logging'
+import { requireSession, unauthorizedResponse } from '@/lib/auth/session'
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ taskId: string }> }
 ) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const { taskId } = await params
     const task = await getTaskWithEvents(taskId)
 
@@ -29,6 +33,9 @@ export async function PATCH(
   { params }: { params: Promise<{ taskId: string }> }
 ) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const { taskId } = await params
     const body = await request.json()
 

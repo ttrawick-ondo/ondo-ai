@@ -6,6 +6,9 @@ import {
   deleteFolder,
   moveFolder,
 } from '@/lib/db/services/folder'
+import { getProject } from '@/lib/db/services/project'
+import { validateWorkspaceAccess } from '@/lib/auth/workspace'
+import { requireSession, unauthorizedResponse, forbiddenResponse } from '@/lib/auth/session'
 
 interface RouteParams {
   params: Promise<{
@@ -13,25 +16,41 @@ interface RouteParams {
   }>
 }
 
+/**
+ * Verify session user has access to a folder via its parent project.
+ */
+async function authorizeFolderAccess(folder: { projectId: string }, sessionUserId: string) {
+  const project = await getProject(folder.projectId)
+  if (!project) return false
+  if (project.ownerId === sessionUserId) return true
+  if (project.workspaceId) {
+    return validateWorkspaceAccess(project.workspaceId, sessionUserId)
+  }
+  return false
+}
+
 // GET /api/folders/[folderId] - Get a single folder
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const { folderId } = await params
     const { searchParams } = new URL(request.url)
     const includeChildren = searchParams.get('children') === 'true'
 
-    if (includeChildren) {
-      const folder = await getFolderWithChildren(folderId)
-      if (!folder) {
-        return NextResponse.json({ error: 'Folder not found' }, { status: 404 })
-      }
-      return NextResponse.json({ data: folder })
-    }
+    const folder = includeChildren
+      ? await getFolderWithChildren(folderId)
+      : await getFolder(folderId)
 
-    const folder = await getFolder(folderId)
     if (!folder) {
       return NextResponse.json({ error: 'Folder not found' }, { status: 404 })
     }
+
+    if (!(await authorizeFolderAccess(folder, session.user.id))) {
+      return forbiddenResponse()
+    }
+
     return NextResponse.json({ data: folder })
   } catch (error) {
     console.error('Error fetching folder:', error)
@@ -45,7 +64,20 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 // PATCH /api/folders/[folderId] - Update a folder
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const { folderId } = await params
+
+    const existingFolder = await getFolder(folderId)
+    if (!existingFolder) {
+      return NextResponse.json({ error: 'Folder not found' }, { status: 404 })
+    }
+
+    if (!(await authorizeFolderAccess(existingFolder, session.user.id))) {
+      return forbiddenResponse()
+    }
+
     const body = await request.json()
     const { name, color, icon, position, parentId, move } = body
 
@@ -81,7 +113,20 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 // DELETE /api/folders/[folderId] - Delete a folder
 export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const { folderId } = await params
+
+    const existingFolder = await getFolder(folderId)
+    if (!existingFolder) {
+      return NextResponse.json({ error: 'Folder not found' }, { status: 404 })
+    }
+
+    if (!(await authorizeFolderAccess(existingFolder, session.user.id))) {
+      return forbiddenResponse()
+    }
+
     await deleteFolder(folderId)
     return NextResponse.json({ success: true })
   } catch (error) {

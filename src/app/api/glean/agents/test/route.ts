@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import type { AgentPreviewConfig, GleanCitation } from '@/types'
+import { requireSession, unauthorizedResponse } from '@/lib/auth/session'
 
 // Mock response for development
 const MOCK_CITATIONS: GleanCitation[] = [
@@ -28,6 +29,9 @@ interface TestAgentRequest {
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const body: TestAgentRequest = await request.json()
 
     const { config, query } = body
@@ -83,8 +87,7 @@ export async function POST(request: NextRequest) {
     })
 
     if (!gleanResponse.ok) {
-      const errorText = await gleanResponse.text()
-      console.error('Glean API error:', errorText)
+      console.error('Glean API error:', await gleanResponse.text())
       return NextResponse.json(
         { message: 'Failed to test agent' },
         { status: gleanResponse.status }
@@ -107,7 +110,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Agent test error:', error)
     return NextResponse.json(
-      { message: error instanceof Error ? error.message : 'Test failed' },
+      { message: 'Test failed' },
       { status: 500 }
     )
   }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireSession } from '@/lib/auth/session'
 
 /**
  * Action Dispatcher
@@ -41,40 +42,45 @@ export interface ActionAuth {
 
 /**
  * Validate action authentication
- * Supports API keys, session tokens, and Glean agent tokens
+ * Supports session cookies, API keys, and Glean agent tokens
  */
 async function validateActionAuth(request: NextRequest): Promise<ActionAuth> {
-  const authHeader = request.headers.get('authorization')
+  // Check session-based auth first (browser requests)
+  const session = await requireSession()
+  if (session) {
+    return {
+      valid: true,
+      user: { id: session.user.id, email: session.user.email ?? undefined },
+      source: 'session',
+    }
+  }
 
-  if (!authHeader) {
+  // Check for Bearer token (API clients)
+  const authHeader = request.headers.get('authorization')
+  if (!authHeader?.startsWith('Bearer ')) {
     return { valid: false, source: 'api_key' }
   }
 
-  // Check for Bearer token
-  if (authHeader.startsWith('Bearer ')) {
-    const token = authHeader.slice(7)
+  const token = authHeader.slice(7)
 
-    // Internal API key check
-    const internalApiKey = process.env.ACTIONS_API_KEY
-    if (internalApiKey && token === internalApiKey) {
-      return {
-        valid: true,
-        user: { id: 'system', email: 'system@internal' },
-        source: 'api_key',
-      }
+  // Internal API key check
+  const internalApiKey = process.env.ACTIONS_API_KEY
+  if (internalApiKey && token === internalApiKey) {
+    return {
+      valid: true,
+      user: { id: 'system', email: 'system@internal' },
+      source: 'api_key',
     }
+  }
 
-    // Glean agent token validation (simplified - would need real validation)
-    if (token.startsWith('glean-')) {
-      return {
-        valid: true,
-        user: { id: 'glean-agent' },
-        source: 'glean_agent',
-      }
+  // Glean agent token validation — validate against actual GLEAN_API_KEY
+  const gleanApiKey = process.env.GLEAN_API_KEY
+  if (gleanApiKey && token === gleanApiKey) {
+    return {
+      valid: true,
+      user: { id: 'glean-agent' },
+      source: 'glean_agent',
     }
-
-    // TODO: Add session token validation
-    // TODO: Add OAuth token validation for external integrations
   }
 
   return { valid: false, source: 'api_key' }
@@ -249,7 +255,7 @@ export async function POST(request: NextRequest) {
         success: false,
         error: {
           code: 'INTERNAL_ERROR',
-          message: error instanceof Error ? error.message : 'Action execution failed',
+          message: 'Action execution failed',
         },
       },
       { status: 500 }
@@ -261,6 +267,11 @@ export async function POST(request: NextRequest) {
  * GET /api/actions - List available action systems and their actions
  */
 export async function GET() {
+  const session = await requireSession()
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   const systems = Object.keys(actionHandlers).map((system) => ({
     system,
     actions: Object.keys(actionHandlers[system]).filter((a) => a !== 'default'),

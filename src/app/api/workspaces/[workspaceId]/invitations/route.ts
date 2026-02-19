@@ -6,6 +6,8 @@ import {
   getWorkspaceMember,
 } from '@/lib/db/services/workspace'
 import { getUserByEmail } from '@/lib/db/services/user'
+import { validateWorkspaceAccess } from '@/lib/auth/workspace'
+import { requireSession, unauthorizedResponse, forbiddenResponse } from '@/lib/auth/session'
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic'
@@ -17,7 +19,13 @@ interface RouteParams {
 // GET /api/workspaces/:workspaceId/invitations - List pending invitations
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const { workspaceId } = await params
+
+    const hasAccess = await validateWorkspaceAccess(workspaceId, session.user.id)
+    if (!hasAccess) return forbiddenResponse()
 
     const invitations = await getPendingInvitations(workspaceId)
 
@@ -34,7 +42,14 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 // POST /api/workspaces/:workspaceId/invitations - Create invitation
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const { workspaceId } = await params
+
+    const hasAccess = await validateWorkspaceAccess(workspaceId, session.user.id)
+    if (!hasAccess) return forbiddenResponse()
+
     const body = await request.json()
     const { email, role = 'member' } = body
 
@@ -80,7 +95,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 // DELETE /api/workspaces/:workspaceId/invitations - Cancel invitation
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const { workspaceId } = await params
+
+    const hasAccess = await validateWorkspaceAccess(workspaceId, session.user.id)
+    if (!hasAccess) return forbiddenResponse()
+
     const { searchParams } = new URL(request.url)
     const invitationId = searchParams.get('id')
 

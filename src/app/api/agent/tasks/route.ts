@@ -7,9 +7,13 @@ import {
   type TaskFilter,
 } from '@/lib/db/services/agent-task'
 import { agentLogger } from '@/lib/logging'
+import { requireSession, unauthorizedResponse } from '@/lib/auth/session'
 
 export async function GET(request: NextRequest) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const searchParams = request.nextUrl.searchParams
     const limit = parseInt(searchParams.get('limit') || '50', 10)
     const offset = parseInt(searchParams.get('offset') || '0', 10)
@@ -40,6 +44,9 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const body = await request.json()
 
     const input: CreateTaskInput = {

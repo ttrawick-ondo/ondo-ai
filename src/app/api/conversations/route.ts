@@ -7,12 +7,16 @@ import {
   searchConversations,
 } from '@/lib/db/services/conversation'
 import { validateWorkspaceAccess } from '@/lib/auth/workspace'
+import { requireSession, unauthorizedResponse } from '@/lib/auth/session'
 
 // GET /api/conversations - Get conversations for user
 export async function GET(request: NextRequest) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+    const userId = session.user.id
+
     const { searchParams } = new URL(request.url)
-    const userId = searchParams.get('userId')
     const projectId = searchParams.get('projectId')
     const folderId = searchParams.get('folderId')
     const search = searchParams.get('search')
@@ -24,13 +28,6 @@ export async function GET(request: NextRequest) {
     // workspaceId: 'null' string means Personal space, actual value means workspace
     const workspaceIdParam = searchParams.get('workspaceId')
     const workspaceId = workspaceIdParam === 'null' ? null : workspaceIdParam
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'userId is required' },
-        { status: 400 }
-      )
-    }
 
     // Validate workspace access if a workspace is specified
     if (workspaceId) {
@@ -92,12 +89,16 @@ export async function GET(request: NextRequest) {
 // POST /api/conversations - Create a new conversation
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { userId, projectId, folderId, workspaceId, title, model, provider, systemPrompt, metadata } = body
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+    const userId = session.user.id
 
-    if (!userId || !title || !model || !provider) {
+    const body = await request.json()
+    const { projectId, folderId, workspaceId, title, model, provider, systemPrompt, metadata } = body
+
+    if (!title || !model || !provider) {
       return NextResponse.json(
-        { error: 'userId, title, model, and provider are required' },
+        { error: 'title, model, and provider are required' },
         { status: 400 }
       )
     }

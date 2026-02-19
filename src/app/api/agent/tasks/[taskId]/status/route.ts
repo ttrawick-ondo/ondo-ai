@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { updateTask, type TaskStatus } from '@/lib/db/services/agent-task'
 import { agentLogger } from '@/lib/logging'
+import { requireSession, unauthorizedResponse } from '@/lib/auth/session'
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ taskId: string }> }
 ) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const { taskId } = await params
     const body = await request.json()
     const status = body.status as TaskStatus

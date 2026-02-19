@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { searchUsers } from '@/lib/db/services/user'
+import { requireSession, unauthorizedResponse } from '@/lib/auth/session'
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic'
@@ -7,6 +8,9 @@ export const dynamic = 'force-dynamic'
 // GET /api/users/search?q=email&excludeWorkspace=id
 export async function GET(request: NextRequest) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const { searchParams } = new URL(request.url)
     const query = searchParams.get('q')
     const excludeWorkspaceId = searchParams.get('excludeWorkspace')

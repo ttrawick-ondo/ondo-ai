@@ -4,10 +4,30 @@ import {
   getProjectFolders,
   getFolderTree,
 } from '@/lib/db/services/folder'
+import { getProject } from '@/lib/db/services/project'
+import { validateWorkspaceAccess } from '@/lib/auth/workspace'
+import { requireSession, unauthorizedResponse, forbiddenResponse } from '@/lib/auth/session'
+
+/**
+ * Verify session user owns or has workspace access to a project.
+ */
+async function authorizeProjectAccess(projectId: string, sessionUserId: string) {
+  const project = await getProject(projectId)
+  if (!project) return { authorized: false, notFound: true } as const
+  if (project.ownerId === sessionUserId) return { authorized: true } as const
+  if (project.workspaceId) {
+    const hasAccess = await validateWorkspaceAccess(project.workspaceId, sessionUserId)
+    if (hasAccess) return { authorized: true } as const
+  }
+  return { authorized: false, notFound: false } as const
+}
 
 // GET /api/folders?projectId=xxx - Get folders for a project
 export async function GET(request: NextRequest) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const { searchParams } = new URL(request.url)
     const projectId = searchParams.get('projectId')
     const tree = searchParams.get('tree') === 'true'
@@ -17,6 +37,14 @@ export async function GET(request: NextRequest) {
         { error: 'projectId is required' },
         { status: 400 }
       )
+    }
+
+    const authResult = await authorizeProjectAccess(projectId, session.user.id)
+    if (!authResult.authorized) {
+      if ('notFound' in authResult && authResult.notFound) {
+        return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+      }
+      return forbiddenResponse()
     }
 
     if (tree) {
@@ -38,6 +66,9 @@ export async function GET(request: NextRequest) {
 // POST /api/folders - Create a new folder
 export async function POST(request: NextRequest) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
     const body = await request.json()
     const { projectId, parentId, name, color, icon, position } = body
 
@@ -46,6 +77,14 @@ export async function POST(request: NextRequest) {
         { error: 'projectId and name are required' },
         { status: 400 }
       )
+    }
+
+    const authResult = await authorizeProjectAccess(projectId, session.user.id)
+    if (!authResult.authorized) {
+      if ('notFound' in authResult && authResult.notFound) {
+        return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+      }
+      return forbiddenResponse()
     }
 
     const folder = await createFolder({

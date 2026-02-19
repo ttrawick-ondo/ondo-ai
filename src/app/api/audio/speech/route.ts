@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getTTSService, type TTSRequest, type TTSVoice, type TTSModel } from '@/lib/api/audio'
+import { requireSession, unauthorizedResponse } from '@/lib/auth/session'
+import { checkRateLimit, rateLimitResponse } from '@/lib/auth/rate-limit'
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
+    // Rate limit: 10 requests per minute per user
+    const { limited, resetMs } = checkRateLimit(`audio:${session.user.id}`, 10)
+    if (limited) return rateLimitResponse(resetMs)
+
     const body = await request.json() as TTSRequest
 
     if (!body.text || body.text.trim().length === 0) {
@@ -30,7 +39,7 @@ export async function POST(request: NextRequest) {
 
     if (!result.success || !result.audioBuffer) {
       return NextResponse.json(
-        { error: result.error },
+        { error: 'Failed to generate speech' },
         { status: 500 }
       )
     }
@@ -45,7 +54,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('TTS error:', error)
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to generate speech' },
+      { error: 'Failed to generate speech' },
       { status: 500 }
     )
   }

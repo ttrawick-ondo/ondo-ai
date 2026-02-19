@@ -5,12 +5,21 @@ import { createSSEStream } from '@/lib/api/streaming/encoder'
 import { APIError, ValidationError } from '@/lib/api/errors/apiErrors'
 import { chatLogger, logChatCompletion } from '@/lib/logging'
 import { getRouteForRequest, getRoutingConfig } from '@/lib/api/routing'
+import { requireSession, unauthorizedResponse } from '@/lib/auth/session'
+import { checkRateLimit, rateLimitResponse } from '@/lib/auth/rate-limit'
 
 export async function POST(request: NextRequest) {
   const requestId = crypto.randomUUID()
   const startTime = Date.now()
 
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+
+    // Rate limit: 30 requests per minute per user
+    const { limited, resetMs } = checkRateLimit(`chat:${session.user.id}`, 30)
+    if (limited) return rateLimitResponse(resetMs)
+
     const body = await request.json()
 
     // Validate request
@@ -126,7 +135,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         code: 'INTERNAL_ERROR',
-        message: error instanceof Error ? error.message : 'Internal server error',
+        message: 'An internal error occurred',
       },
       { status: 500 }
     )

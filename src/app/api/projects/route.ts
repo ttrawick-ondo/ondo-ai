@@ -2,15 +2,19 @@ import { NextRequest, NextResponse } from 'next/server'
 import {
   createProject,
   getUserProjects,
-  getWorkspaceProjects,
   searchProjects,
 } from '@/lib/db/services/project'
+import { validateWorkspaceAccess } from '@/lib/auth/workspace'
+import { requireSession, unauthorizedResponse } from '@/lib/auth/session'
 
 // GET /api/projects - Get projects for user or workspace
 export async function GET(request: NextRequest) {
   try {
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+    const userId = session.user.id
+
     const { searchParams } = new URL(request.url)
-    const userId = searchParams.get('userId')
     const workspaceIdParam = searchParams.get('workspaceId')
     // 'null' string = Personal space, actual value = workspace, not provided = all
     const workspaceId = workspaceIdParam === 'null' ? null : workspaceIdParam
@@ -19,22 +23,25 @@ export async function GET(request: NextRequest) {
     const limit = searchParams.get('limit')
     const offset = searchParams.get('offset')
 
+    // Validate workspace access if specified
+    if (workspaceId) {
+      const hasAccess = await validateWorkspaceAccess(workspaceId, userId)
+      if (!hasAccess) {
+        return NextResponse.json(
+          { error: 'Access denied to this workspace' },
+          { status: 403 }
+        )
+      }
+    }
+
     // Search mode
-    if (search && userId) {
+    if (search) {
       const projects = await searchProjects(userId, search, {
         workspaceId: workspaceId ?? undefined,
         includeArchived: archived,
         limit: limit ? parseInt(limit, 10) : undefined,
       })
       return NextResponse.json({ data: projects })
-    }
-
-    // User projects (requires userId)
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'userId is required' },
-        { status: 400 }
-      )
     }
 
     // Filter by workspace if provided (including null for Personal)
@@ -57,19 +64,34 @@ export async function GET(request: NextRequest) {
 // POST /api/projects - Create a new project
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { workspaceId, ownerId, name, description, color, icon, settings } = body
+    const session = await requireSession()
+    if (!session) return unauthorizedResponse()
+    const userId = session.user.id
 
-    if (!ownerId || !name) {
+    const body = await request.json()
+    const { workspaceId, name, description, color, icon, settings } = body
+
+    if (!name) {
       return NextResponse.json(
-        { error: 'ownerId and name are required' },
+        { error: 'name is required' },
         { status: 400 }
       )
     }
 
+    // Validate workspace access if specified
+    if (workspaceId) {
+      const hasAccess = await validateWorkspaceAccess(workspaceId, userId)
+      if (!hasAccess) {
+        return NextResponse.json(
+          { error: 'Access denied to this workspace' },
+          { status: 403 }
+        )
+      }
+    }
+
     const project = await createProject({
       workspaceId: workspaceId ?? null, // null = Personal space
-      ownerId,
+      ownerId: userId,
       name,
       description,
       color,
