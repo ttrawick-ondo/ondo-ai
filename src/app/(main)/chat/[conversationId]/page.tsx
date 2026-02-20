@@ -51,10 +51,10 @@ export default function ConversationPage() {
   // Set active conversation and load messages once conversation exists
   useEffect(() => {
     if (conversationId && conversationExists) {
-      setActiveConversation(conversationId)
+      setActiveConversation(conversationId, initialBranchId)
       loadConversationMessages(conversationId)
     }
-  }, [conversationId, conversationExists, setActiveConversation, loadConversationMessages])
+  }, [conversationId, conversationExists, initialBranchId, setActiveConversation, loadConversationMessages])
 
   // Redirect only after we've confirmed the conversation doesn't exist
   useEffect(() => {

@@ -40,15 +40,15 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Search mode
+    // Search mode — returns conversations with matching message snippets
     if (search) {
-      const conversations = await searchConversations(userId, workspaceId, search, {
+      const results = await searchConversations(userId, workspaceId, search, {
         projectId: projectId || undefined,
         folderId: folderId || undefined,
         limit: limit ? parseInt(limit, 10) : undefined,
         includeArchived: archived,
       })
-      return NextResponse.json({ data: conversations })
+      return NextResponse.json({ data: results })
     }
 
     // Pinned conversations

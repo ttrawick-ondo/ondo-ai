@@ -169,7 +169,7 @@ export default function ProjectDetailPage() {
   if (!project) {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-muted-foreground">Project not found</p>
+        <p className="text-muted-foreground">Folder not found</p>
       </div>
     )
   }
@@ -189,7 +189,7 @@ export default function ProjectDetailPage() {
             className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground mb-4"
           >
             <ArrowLeft className="h-4 w-4 mr-1" />
-            Back to Projects
+            Back to Folders
           </Link>
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3">

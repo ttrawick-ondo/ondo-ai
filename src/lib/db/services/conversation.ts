@@ -428,6 +428,31 @@ export async function toggleConversationPin(
 // Search
 // ============================================================================
 
+export interface MessageSnippet {
+  id: string
+  role: string
+  snippet: string
+  createdAt: Date
+}
+
+export interface SearchResult {
+  conversation: Conversation
+  matchingMessages: MessageSnippet[]
+}
+
+function extractSnippet(content: string, query: string, radius = 80): string {
+  const lowerContent = content.toLowerCase()
+  const lowerQuery = query.toLowerCase()
+  const idx = lowerContent.indexOf(lowerQuery)
+  if (idx === -1) return content.slice(0, radius * 2)
+
+  const start = Math.max(0, idx - radius)
+  const end = Math.min(content.length, idx + query.length + radius)
+  const prefix = start > 0 ? '...' : ''
+  const suffix = end < content.length ? '...' : ''
+  return prefix + content.slice(start, end) + suffix
+}
+
 export async function searchConversations(
   userId: string,
   workspaceId: string | null,
@@ -438,9 +463,8 @@ export async function searchConversations(
     limit?: number
     includeArchived?: boolean
   }
-): Promise<Conversation[]> {
-  // SQLite uses LIKE for searching
-  return prisma.conversation.findMany({
+): Promise<SearchResult[]> {
+  const conversations = await prisma.conversation.findMany({
     where: {
       userId,
       workspaceId: workspaceId, // null = Personal space
@@ -448,20 +472,40 @@ export async function searchConversations(
       folderId: options?.folderId,
       archived: options?.includeArchived ? undefined : false,
       OR: [
-        { title: { contains: query } },
-        // Search in messages content
+        { title: { contains: query, mode: 'insensitive' } },
         {
           messages: {
             some: {
-              content: { contains: query },
+              content: { contains: query, mode: 'insensitive' },
             },
           },
         },
       ],
     },
+    include: {
+      messages: {
+        where: {
+          content: { contains: query, mode: 'insensitive' },
+          role: { not: 'tool' },
+        },
+        select: { id: true, role: true, content: true, createdAt: true },
+        orderBy: { createdAt: 'asc' },
+        take: 3,
+      },
+    },
     orderBy: { updatedAt: 'desc' },
     take: options?.limit ?? 20,
   })
+
+  return conversations.map(({ messages, ...conv }) => ({
+    conversation: conv,
+    matchingMessages: messages.map((msg) => ({
+      id: msg.id,
+      role: msg.role,
+      snippet: extractSnippet(msg.content, query),
+      createdAt: msg.createdAt,
+    })),
+  }))
 }
 
 // ============================================================================

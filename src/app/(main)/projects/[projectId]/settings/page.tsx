@@ -59,14 +59,14 @@ export default function ProjectSettingsPage() {
   if (!project) {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-muted-foreground">Project not found</p>
+        <p className="text-muted-foreground">Folder not found</p>
       </div>
     )
   }
 
   const handleSave = async () => {
     if (!name.trim()) {
-      toast.error('Project name is required')
+      toast.error('Folder name is required')
       return
     }
 
@@ -78,7 +78,7 @@ export default function ProjectSettingsPage() {
         description: description.trim() || undefined,
         color,
       })
-      toast.success('Project settings saved')
+      toast.success('Folder settings saved')
     } catch (error) {
       toast.error('Failed to save settings')
       console.error('Save error:', error)
@@ -92,10 +92,10 @@ export default function ProjectSettingsPage() {
 
     try {
       deleteProject(projectId)
-      toast.success('Project deleted')
+      toast.success('Folder deleted')
       router.push('/projects')
     } catch (error) {
-      toast.error('Failed to delete project')
+      toast.error('Failed to delete folder')
       console.error('Delete error:', error)
       setIsDeleting(false)
     }
@@ -110,11 +110,11 @@ export default function ProjectSettingsPage() {
           className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground mb-4"
         >
           <ArrowLeft className="h-4 w-4 mr-1" />
-          Back to Project
+          Back to Folder
         </Link>
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-semibold">Project Settings</h1>
+            <h1 className="text-2xl font-semibold">Folder Settings</h1>
             <p className="text-muted-foreground">
               Configure settings for {project.name}
             </p>
@@ -131,16 +131,16 @@ export default function ProjectSettingsPage() {
         <Card>
           <CardHeader>
             <CardTitle>General</CardTitle>
-            <CardDescription>Basic project information</CardDescription>
+            <CardDescription>Basic folder information</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-2">
-              <Label htmlFor="name">Project Name</Label>
+              <Label htmlFor="name">Folder Name</Label>
               <Input
                 id="name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="My Project"
+                placeholder="My Folder"
               />
             </div>
 
@@ -150,7 +150,7 @@ export default function ProjectSettingsPage() {
                 id="description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="What is this project about?"
+                placeholder="What is this folder about?"
                 rows={3}
               />
             </div>
@@ -190,29 +190,29 @@ export default function ProjectSettingsPage() {
           <CardHeader>
             <CardTitle className="text-destructive">Danger Zone</CardTitle>
             <CardDescription>
-              Irreversible actions for this project
+              Irreversible actions for this folder
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex items-center justify-between">
               <div>
-                <p className="font-medium">Delete Project</p>
+                <p className="font-medium">Delete Folder</p>
                 <p className="text-sm text-muted-foreground">
-                  Permanently delete this project and all its conversations
+                  Permanently delete this folder and all its conversations
                 </p>
               </div>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button variant="destructive" disabled={isDeleting}>
                     <Trash2 className="h-4 w-4 mr-2" />
-                    Delete Project
+                    Delete Folder
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
                     <AlertDialogTitle>Are you sure?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      This will permanently delete the project &quot;{project.name}&quot;
+                      This will permanently delete the folder &quot;{project.name}&quot;
                       and all its conversations. This action cannot be undone.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
@@ -222,7 +222,7 @@ export default function ProjectSettingsPage() {
                       onClick={handleDelete}
                       className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                     >
-                      {isDeleting ? 'Deleting...' : 'Delete Project'}
+                      {isDeleting ? 'Deleting...' : 'Delete Folder'}
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>

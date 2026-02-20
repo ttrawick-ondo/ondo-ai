@@ -17,8 +17,9 @@ interface FolderTreeProps {
   onEditFolder?: (id: string) => void
   onDeleteFolder?: (id: string) => void
   onCreateSubfolder?: (parentId: string) => void
+  onNewChat?: (folderId: string) => void
   onMoveFolder?: (id: string) => void
-  onEditConversation?: (id: string) => void
+  onRenameConversation?: (id: string, newTitle: string) => void
   onDeleteConversation?: (id: string) => void
   onPinConversation?: (id: string) => void
   onMoveConversation?: (id: string) => void
@@ -38,8 +39,9 @@ export function FolderTree({
   onEditFolder,
   onDeleteFolder,
   onCreateSubfolder,
+  onNewChat,
   onMoveFolder,
-  onEditConversation,
+  onRenameConversation,
   onDeleteConversation,
   onPinConversation,
   onMoveConversation,
@@ -61,8 +63,9 @@ export function FolderTree({
           onEditFolder={onEditFolder}
           onDeleteFolder={onDeleteFolder}
           onCreateSubfolder={onCreateSubfolder}
+          onNewChat={onNewChat}
           onMoveFolder={onMoveFolder}
-          onEditConversation={onEditConversation}
+          onRenameConversation={onRenameConversation}
           onDeleteConversation={onDeleteConversation}
           onPinConversation={onPinConversation}
           onMoveConversation={onMoveConversation}
@@ -85,8 +88,9 @@ interface FolderTreeNodeProps {
   onEditFolder?: (id: string) => void
   onDeleteFolder?: (id: string) => void
   onCreateSubfolder?: (parentId: string) => void
+  onNewChat?: (folderId: string) => void
   onMoveFolder?: (id: string) => void
-  onEditConversation?: (id: string) => void
+  onRenameConversation?: (id: string, newTitle: string) => void
   onDeleteConversation?: (id: string) => void
   onPinConversation?: (id: string) => void
   onMoveConversation?: (id: string) => void
@@ -105,8 +109,9 @@ function FolderTreeNode({
   onEditFolder,
   onDeleteFolder,
   onCreateSubfolder,
+  onNewChat,
   onMoveFolder,
-  onEditConversation,
+  onRenameConversation,
   onDeleteConversation,
   onPinConversation,
   onMoveConversation,
@@ -135,6 +140,7 @@ function FolderTreeNode({
       onEdit={onEditFolder}
       onDelete={onDeleteFolder}
       onCreateSubfolder={onCreateSubfolder}
+      onNewChat={onNewChat}
       onMove={onMoveFolder}
       isSelected={folder.id === selectedFolderId}
       projectId={projectId}
@@ -154,8 +160,9 @@ function FolderTreeNode({
           onEditFolder={onEditFolder}
           onDeleteFolder={onDeleteFolder}
           onCreateSubfolder={onCreateSubfolder}
+          onNewChat={onNewChat}
           onMoveFolder={onMoveFolder}
-          onEditConversation={onEditConversation}
+          onRenameConversation={onRenameConversation}
           onDeleteConversation={onDeleteConversation}
           onPinConversation={onPinConversation}
           onMoveConversation={onMoveConversation}
@@ -172,7 +179,8 @@ function FolderTreeNode({
           depth={folder.depth + 1}
           isSelected={conv.id === selectedConversationId}
           onSelect={() => onSelectConversation(conv.id)}
-          onEdit={onEditConversation ? () => onEditConversation(conv.id) : undefined}
+          onRename={onRenameConversation}
+          onRenameConversation={onRenameConversation}
           onDelete={onDeleteConversation ? () => onDeleteConversation(conv.id) : undefined}
           onPin={onPinConversation ? () => onPinConversation(conv.id) : undefined}
           onMove={onMoveConversation ? () => onMoveConversation(conv.id) : undefined}

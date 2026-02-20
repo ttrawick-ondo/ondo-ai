@@ -38,7 +38,7 @@ interface ProjectSectionProps {
   onEditFolder?: (id: string) => void
   onDeleteFolder?: (id: string) => void
   onMoveFolder?: (id: string) => void
-  onEditConversation?: (id: string) => void
+  onRenameConversation?: (id: string, newTitle: string) => void
   onDeleteConversation?: (id: string) => void
   onPinConversation?: (id: string) => void
   onMoveConversation?: (id: string) => void
@@ -63,7 +63,7 @@ export function ProjectSection({
   onEditFolder,
   onDeleteFolder,
   onMoveFolder,
-  onEditConversation,
+  onRenameConversation,
   onDeleteConversation,
   onPinConversation,
   onMoveConversation,
@@ -73,9 +73,7 @@ export function ProjectSection({
   enableDragDrop = false,
 }: ProjectSectionProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded)
-  const [isHovered, setIsHovered] = useState(false)
 
-  // Drop zone for project root (conversations dropped here go to project without folder)
   const {
     setNodeRef: setDropRef,
     isOver,
@@ -99,150 +97,137 @@ export function ProjectSection({
     [onCreateFolder, project.id]
   )
 
+  const handleNewChatInFolder = useCallback(
+    (folderId: string) => {
+      onCreateConversation(project.id, folderId)
+    },
+    [onCreateConversation, project.id]
+  )
+
   return (
-    <div className="py-1">
+    <div>
+      {/* Project header */}
       <div
         ref={setDropRef}
         className={cn(
-          'flex items-center gap-1 px-2 py-1.5 rounded-md cursor-pointer transition-colors hover:bg-muted',
+          'group flex items-center gap-1.5 px-2 py-1 rounded-md cursor-pointer transition-colors hover:bg-muted',
           isOver && 'ring-2 ring-primary ring-inset bg-primary/10'
         )}
         onClick={() => setIsExpanded(!isExpanded)}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
       >
-        {/* Expand chevron */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-4 w-4 p-0 shrink-0"
-          onClick={(e) => {
-            e.stopPropagation()
-            setIsExpanded(!isExpanded)
-          }}
-        >
-          {isExpanded ? (
-            <ChevronDown className="h-3 w-3" />
-          ) : (
-            <ChevronRight className="h-3 w-3" />
-          )}
-        </Button>
-
-        {/* Project color dot */}
+        {/* Color dot */}
         <div
-          className="h-3 w-3 rounded-full shrink-0"
+          className="h-2 w-2 rounded-full shrink-0"
           style={{ backgroundColor: project.color }}
         />
 
-        {/* Project name */}
-        <span className="flex-1 truncate text-sm font-medium">
+        {/* Name */}
+        <span className="flex-1 truncate text-[13px] font-semibold leading-snug">
           {project.name}
         </span>
 
-        {/* Conversation count */}
-        {!isExpanded && totalConversations > 0 && (
-          <span className="text-xs text-muted-foreground mr-1">
-            ({totalConversations})
-          </span>
-        )}
+        {/* Right side: count/chevron + hover actions */}
+        <div className="shrink-0 flex items-center">
+          {/* Count + chevron */}
+          <button
+            className="flex items-center gap-px text-[10px] text-muted-foreground hover:text-foreground transition-colors group-hover:mr-0.5"
+            onClick={(e) => {
+              e.stopPropagation()
+              setIsExpanded(!isExpanded)
+            }}
+          >
+            {!isExpanded && totalConversations > 0 && (
+              <span className="tabular-nums">{totalConversations}</span>
+            )}
+            {isExpanded ? (
+              <ChevronDown className="h-3 w-3" />
+            ) : (
+              <ChevronRight className="h-3 w-3" />
+            )}
+          </button>
 
-        {/* Actions - visible on hover OR when expanded */}
-        <div
-          className={cn(
-            'flex items-center gap-0.5 transition-opacity',
-            (isHovered || isExpanded) ? 'opacity-100' : 'opacity-0'
-          )}
-        >
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6"
-            onClick={(e) => {
-              e.stopPropagation()
-              onCreateConversation(project.id)
-            }}
-            title="New conversation"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6"
-            onClick={(e) => {
-              e.stopPropagation()
-              onCreateFolder(project.id)
-            }}
-            title="New folder"
-          >
-            <FolderPlus className="h-3.5 w-3.5" />
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <MoreHorizontal className="h-3.5 w-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuItem
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onCreateConversation(project.id)
-                }}
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                New Conversation
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onCreateFolder(project.id)
-                }}
-              >
-                <FolderPlus className="h-4 w-4 mr-2" />
-                New Folder
-              </DropdownMenuItem>
-              {onEditProject && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onEditProject(project.id)
-                    }}
-                  >
-                    <Pencil className="h-4 w-4 mr-2" />
-                    Edit Project
-                  </DropdownMenuItem>
-                </>
-              )}
-              {onDeleteProject && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    className="text-destructive"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onDeleteProject(project.id)
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete Project
-                  </DropdownMenuItem>
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {/* Hover actions */}
+          <div className="flex items-center opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-4 w-4"
+              onClick={(e) => {
+                e.stopPropagation()
+                onCreateConversation(project.id)
+              }}
+              title="New conversation"
+            >
+              <Plus className="h-2.5 w-2.5" />
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-4 w-4"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <MoreHorizontal className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onCreateConversation(project.id)
+                  }}
+                >
+                  <Plus className="h-3.5 w-3.5 mr-2" />
+                  New Conversation
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onCreateFolder(project.id)
+                  }}
+                >
+                  <FolderPlus className="h-3.5 w-3.5 mr-2" />
+                  New Folder
+                </DropdownMenuItem>
+                {onEditProject && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onEditProject(project.id)
+                      }}
+                    >
+                      <Pencil className="h-3.5 w-3.5 mr-2" />
+                      Edit Folder
+                    </DropdownMenuItem>
+                  </>
+                )}
+                {onDeleteProject && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="text-destructive"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onDeleteProject(project.id)
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 mr-2" />
+                      Delete Folder
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </div>
 
+      {/* Expanded content */}
       {isExpanded && (
-        <div className="ml-2 mt-0.5 space-y-0.5">
+        <div className="ml-2.5 pl-1.5 border-l border-border/40">
           {/* Folder tree */}
           {folders.length > 0 && (
             <FolderTree
@@ -256,8 +241,9 @@ export function ProjectSection({
               onEditFolder={onEditFolder}
               onDeleteFolder={onDeleteFolder}
               onCreateSubfolder={handleCreateSubfolder}
+              onNewChat={handleNewChatInFolder}
               onMoveFolder={onMoveFolder}
-              onEditConversation={onEditConversation}
+              onRenameConversation={onRenameConversation}
               onDeleteConversation={onDeleteConversation}
               onPinConversation={onPinConversation}
               onMoveConversation={onMoveConversation}
@@ -266,7 +252,7 @@ export function ProjectSection({
             />
           )}
 
-          {/* Unorganized conversations (directly in project, not in folder) */}
+          {/* Unorganized conversations */}
           {unorganizedConversations.map((conv) => (
             <ConversationItem
               key={conv.id}
@@ -274,9 +260,8 @@ export function ProjectSection({
               depth={0}
               isSelected={conv.id === selectedConversationId}
               onSelect={() => onSelectConversation(conv.id)}
-              onEdit={
-                onEditConversation ? () => onEditConversation(conv.id) : undefined
-              }
+              onRename={onRenameConversation}
+              onRenameConversation={onRenameConversation}
               onDelete={
                 onDeleteConversation
                   ? () => onDeleteConversation(conv.id)
@@ -298,28 +283,28 @@ export function ProjectSection({
             />
           ))}
 
-          {/* Empty state with action buttons */}
+          {/* Empty state */}
           {folders.length === 0 && unorganizedConversations.length === 0 && (
-            <div className="px-4 py-3 flex flex-col gap-2">
-              <p className="text-xs text-muted-foreground">No conversations yet</p>
-              <div className="flex gap-2">
+            <div className="py-3 px-2">
+              <p className="text-xs text-muted-foreground mb-2">No conversations yet</p>
+              <div className="flex gap-1.5">
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-7 text-xs"
+                  className="h-6 text-[11px] px-2"
                   onClick={() => onCreateFolder(project.id)}
                 >
-                  <FolderPlus className="h-3 w-3 mr-1.5" />
-                  New Folder
+                  <FolderPlus className="h-3 w-3 mr-1" />
+                  Folder
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-7 text-xs"
+                  className="h-6 text-[11px] px-2"
                   onClick={() => onCreateConversation(project.id)}
                 >
-                  <Plus className="h-3 w-3 mr-1.5" />
-                  New Chat
+                  <Plus className="h-3 w-3 mr-1" />
+                  Chat
                 </Button>
               </div>
             </div>

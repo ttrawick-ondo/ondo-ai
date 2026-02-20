@@ -13,7 +13,7 @@ interface PinnedSectionProps {
   selectedConversationId?: string | null
   focusedConversationId?: string | null
   onSelectConversation: (id: string) => void
-  onEditConversation?: (id: string) => void
+  onRenameConversation?: (id: string, newTitle: string) => void
   onDeleteConversation?: (id: string) => void
   onPinConversation?: (id: string) => void
   onMoveConversation?: (id: string) => void
@@ -26,7 +26,7 @@ export function PinnedSection({
   selectedConversationId,
   focusedConversationId,
   onSelectConversation,
-  onEditConversation,
+  onRenameConversation,
   onDeleteConversation,
   onPinConversation,
   onMoveConversation,
@@ -67,7 +67,8 @@ export function PinnedSection({
               isSelected={conv.id === selectedConversationId}
               isFocused={conv.id === focusedConversationId}
               onSelect={() => onSelectConversation(conv.id)}
-              onEdit={onEditConversation ? () => onEditConversation(conv.id) : undefined}
+              onRename={onRenameConversation}
+              onRenameConversation={onRenameConversation}
               onDelete={onDeleteConversation ? () => onDeleteConversation(conv.id) : undefined}
               onPin={onPinConversation ? () => onPinConversation(conv.id) : undefined}
               onMove={onMoveConversation ? () => onMoveConversation(conv.id) : undefined}

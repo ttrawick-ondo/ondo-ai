@@ -95,6 +95,18 @@ export interface ConversationWithBranches extends Conversation {
   parent: Conversation | null
 }
 
+export interface MessageSnippet {
+  id: string
+  role: string
+  snippet: string
+  createdAt: string
+}
+
+export interface SearchResultItem {
+  conversation: Conversation
+  matchingMessages: MessageSnippet[]
+}
+
 class ConversationApiClient {
   /**
    * Get all conversations for a user in a workspace
@@ -181,7 +193,7 @@ class ConversationApiClient {
   }
 
   /**
-   * Search conversations in a workspace
+   * Search conversations in a workspace — returns conversations with matching message snippets
    */
   async searchConversations(
     userId: string,
@@ -193,7 +205,7 @@ class ConversationApiClient {
       includeArchived?: boolean
       limit?: number
     }
-  ): Promise<Conversation[]> {
+  ): Promise<SearchResultItem[]> {
     const params = new URLSearchParams({ userId, search: query })
     params.set('workspaceId', workspaceId === null ? 'null' : workspaceId)
     if (options?.projectId) params.set('projectId', options.projectId)
@@ -209,7 +221,10 @@ class ConversationApiClient {
     }
 
     const { data } = await response.json()
-    return (data as ConversationApiResponse[]).map(mapApiResponse)
+    return (data as { conversation: ConversationApiResponse; matchingMessages: MessageSnippet[] }[]).map((item) => ({
+      conversation: mapApiResponse(item.conversation),
+      matchingMessages: item.matchingMessages,
+    }))
   }
 
   /**

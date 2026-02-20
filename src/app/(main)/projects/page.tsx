@@ -122,30 +122,30 @@ export default function ProjectsPage() {
     <div className="p-6">
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">Projects</h1>
+          <h1 className="text-2xl font-semibold">Folders</h1>
           <p className="text-muted-foreground">
-            Organize your conversations into projects and folders
+            Organize your conversations into folders
           </p>
         </div>
         <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
           <DialogTrigger asChild>
             <Button>
               <Plus className="h-4 w-4 mr-2" />
-              New Project
+              New Folder
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Create Project</DialogTitle>
+              <DialogTitle>Create Folder</DialogTitle>
               <DialogDescription>
-                Create a new project to organize related conversations.
+                Create a new folder to organize related conversations.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium">Name</label>
                 <Input
-                  placeholder="Project name"
+                  placeholder="Folder name"
                   value={newProject.name}
                   onChange={(e) => setNewProject({ ...newProject, name: e.target.value })}
                 />
@@ -190,13 +190,13 @@ export default function ProjectsPage() {
       {filteredProjects.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <FolderKanban className="h-12 w-12 text-muted-foreground/50 mb-4" />
-          <h3 className="text-lg font-medium mb-1">No projects yet</h3>
+          <h3 className="text-lg font-medium mb-1">No folders yet</h3>
           <p className="text-muted-foreground mb-4">
-            Create a project to organize your conversations
+            Create a folder to organize your conversations
           </p>
           <Button onClick={() => setIsCreateOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
-            Create First Project
+            Create First Folder
           </Button>
         </div>
       ) : (
@@ -274,7 +274,7 @@ export default function ProjectsPage() {
         onOpenChange={setDeleteDialogOpen}
         onConfirm={handleConfirmDelete}
         itemName={projectToDelete?.name}
-        itemType="project"
+        itemType="folder"
       />
     </div>
   )

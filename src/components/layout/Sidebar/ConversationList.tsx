@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Clock, FolderPlus, Inbox, MessageSquare, Plus } from 'lucide-react'
+import { Clock, FolderPlus, MessageSquare, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -12,21 +12,19 @@ import {
   useChatActions,
   usePinnedConversations,
   useRecentConversations,
-  useProjects,
-  useFolderTree,
   useFolderActions,
-  useProjectFolders,
-  useConversationsByProject,
+  useFolderStore,
   useChatLoading,
   useConversationsInitialized,
-  useProjectLoading,
-  useProjectsInitialized,
   useActiveWorkspaceId,
+  useProjects,
+  useProjectsInitialized,
+  useProjectActions,
 } from '@/stores'
-import { SearchBar } from './SearchBar'
+import { buildFolderTree } from '@/stores/folderStore'
 import { PinnedSection } from './PinnedSection'
-import { QuickFilters, filterConversationsByQuickFilter } from './QuickFilters'
 import { ProjectSection } from './ProjectSection'
+import { QuickFilters, filterConversationsByQuickFilter } from './QuickFilters'
 import { SidebarDndContext } from './SidebarDndContext'
 import { SidebarSkeleton } from './SidebarSkeleton'
 import { ConversationItem, CreateFolderDialog, MoveConversationDialog } from '@/components/folders'
@@ -40,27 +38,43 @@ export function ConversationList() {
   const conversations = useConversations(activeWorkspaceId)
   const pinnedConversations = usePinnedConversations(activeWorkspaceId)
   const recentConversations = useRecentConversations(10, activeWorkspaceId)
-  const projects = useProjects(activeWorkspaceId)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
+  const activeBranchId = useChatStore((s) => s.activeBranchId)
+  // When viewing a branch, highlight it instead of the parent
+  const selectedConversationId = activeBranchId ?? activeConversationId
   const isLoading = useChatLoading()
   const isInitialized = useConversationsInitialized()
-  const projectsLoading = useProjectLoading()
-  const projectsInitialized = useProjectsInitialized()
   const {
     setActiveConversation,
     createConversation,
     deleteConversation,
+    updateConversationTitle,
     toggleConversationPinned,
     moveConversationToFolder,
   } = useChatActions()
-  const { createFolder, deleteFolder, moveFolder } = useFolderActions()
+  const { createFolder, deleteFolder, moveFolder, fetchProjectFolders } = useFolderActions()
+  const { deleteProject } = useProjectActions()
+
+  // Project & folder data
+  const projects = useProjects(activeWorkspaceId)
+  const isProjectsInitialized = useProjectsInitialized()
+  // Subscribe to folder store reactively so useMemo recomputes when folders load
+  const foldersRecord = useFolderStore((s) => s.folders)
+  const expandedFolders = useFolderStore((s) => s.expandedFolders)
+
+  // Fetch folders for each project once projects are loaded
+  useEffect(() => {
+    if (!isProjectsInitialized || projects.length === 0) return
+    for (const project of projects) {
+      fetchProjectFolders(project.id)
+    }
+  }, [isProjectsInitialized, projects, fetchProjectFolders])
 
   // Local state
-  const [searchQuery, setSearchQuery] = useState('')
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('all')
   const [createFolderDialogOpen, setCreateFolderDialogOpen] = useState(false)
   const [createFolderParent, setCreateFolderParent] = useState<{
-    projectId: string
+    projectId?: string
     parentId?: string
     parentName?: string
   } | null>(null)
@@ -79,7 +93,7 @@ export function ConversationList() {
   const [focusedConversationId, setFocusedConversationId] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // Build conversations record for FolderTree
+  // Build conversations record for FolderTree / ProjectSection
   const conversationsRecord = useMemo(() => {
     return conversations.reduce((acc, conv) => {
       acc[conv.id] = conv
@@ -105,57 +119,63 @@ export function ConversationList() {
     return map
   }, [conversations])
 
-  // Filter conversations based on search and quick filter
+  // Filter conversations based on quick filter
   const filteredConversations = useMemo(() => {
-    let result = conversations
-
-    // Apply search filter
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase()
-      result = result.filter((conv) =>
-        conv.title.toLowerCase().includes(query)
-      )
-    }
-
-    // Apply quick filter
-    result = filterConversationsByQuickFilter(result, quickFilter)
-
-    return result
-  }, [conversations, searchQuery, quickFilter])
+    return filterConversationsByQuickFilter(conversations, quickFilter)
+  }, [conversations, quickFilter])
 
   // Build folder trees per project
   const foldersByProject = useMemo(() => {
     const result: Record<string, FolderTreeNode[]> = {}
+    const allFolders = Object.values(foldersRecord)
     for (const project of projects) {
-      const projectConversations = conversations.filter(
-        (c) => c.projectId === project.id
+      const projectFolders = allFolders.filter((f) => f.projectId === project.id)
+      result[project.id] = buildFolderTree(projectFolders, conversations)
+    }
+    return result
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projects, foldersRecord, conversations, expandedFolders])
+
+  // Unorganized conversations per project (in project but not in any folder)
+  const unorganizedByProject = useMemo(() => {
+    const result: Record<string, Conversation[]> = {}
+    for (const project of projects) {
+      result[project.id] = conversations.filter(
+        (c) => c.projectId === project.id && !c.folderId && !c.parentId
       )
-      result[project.id] = buildFolderTreeForProject(project.id, projectConversations)
     }
     return result
   }, [projects, conversations])
 
-  // Get unorganized conversations per project
-  const unorganizedByProject = useMemo(() => {
-    const result: Record<string, Conversation[]> = {}
-    for (const project of projects) {
-      result[project.id] = filteredConversations
-        .filter((c) => c.projectId === project.id && !c.folderId && !c.parentId)
-        .sort(
-          (a, b) =>
-            new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime()
-        )
+  // Build folder nodes record for DnD context (across all projects)
+  const folderNodesRecord = useMemo(() => {
+    const result: Record<string, FolderTreeNode> = {}
+    const addFolderNodes = (nodes: FolderTreeNode[]) => {
+      for (const node of nodes) {
+        result[node.id] = node
+        addFolderNodes(node.children)
+      }
+    }
+    for (const projectId of Object.keys(foldersByProject)) {
+      addFolderNodes(foldersByProject[projectId])
     }
     return result
-  }, [projects, filteredConversations])
+  }, [foldersByProject])
 
   // Handlers
   const handleSelectConversation = useCallback(
     (id: string) => {
-      setActiveConversation(id)
-      router.push(`/chat/${id}`)
+      const conv = conversationsRecord[id]
+      // If selecting a branch, navigate to its parent with the branch tab selected
+      if (conv?.parentId) {
+        setActiveConversation(conv.parentId, id)
+        router.push(`/chat/${conv.parentId}?branch=${id}`)
+      } else {
+        setActiveConversation(id)
+        router.push(`/chat/${id}`)
+      }
     },
-    [setActiveConversation, router]
+    [setActiveConversation, router, conversationsRecord]
   )
 
   const handleDeleteConversation = useCallback(
@@ -171,6 +191,13 @@ export function ConversationList() {
     [conversationsRecord]
   )
 
+  const handleRenameConversation = useCallback(
+    (id: string, newTitle: string) => {
+      updateConversationTitle(id, newTitle)
+    },
+    [updateConversationTitle]
+  )
+
   const handleConfirmDelete = useCallback(() => {
     if (!itemToDelete) return
 
@@ -181,9 +208,11 @@ export function ConversationList() {
       }
     } else if (itemToDelete.type === 'folder') {
       deleteFolder(itemToDelete.id)
+    } else if (itemToDelete.type === 'project') {
+      deleteProject(itemToDelete.id)
     }
     setItemToDelete(null)
-  }, [itemToDelete, deleteConversation, deleteFolder, activeConversationId, router])
+  }, [itemToDelete, deleteConversation, deleteFolder, deleteProject, activeConversationId, router])
 
   const handlePinConversation = useCallback(
     (id: string) => {
@@ -216,26 +245,25 @@ export function ConversationList() {
     []
   )
 
-  const handleCreateConversation = useCallback(
-    async (projectId: string, folderId?: string) => {
-      const id = await createConversation('New conversation', projectId, undefined, folderId || null, activeWorkspaceId)
-      router.push(`/chat/${id}`)
-    },
-    [router, createConversation, activeWorkspaceId]
-  )
-
   const handleSubmitCreateFolder = useCallback(
     (data: { name: string; color: string | null }) => {
-      if (!createFolderParent) return
-
       createFolder({
-        projectId: createFolderParent.projectId,
-        parentId: createFolderParent.parentId ?? null,
+        projectId: createFolderParent?.projectId ?? '',
+        parentId: createFolderParent?.parentId ?? null,
         name: data.name,
         color: data.color,
       })
     },
     [createFolder, createFolderParent]
+  )
+
+  const handleCreateConversationInProject = useCallback(
+    async (projectId: string, folderId?: string) => {
+      const id = await createConversation('New conversation', projectId, undefined, folderId || null, activeWorkspaceId)
+      setActiveConversation(id)
+      router.push(`/chat/${id}`)
+    },
+    [createConversation, setActiveConversation, router, activeWorkspaceId]
   )
 
   const handleSubmitMoveConversation = useCallback(
@@ -261,21 +289,6 @@ export function ConversationList() {
     [moveFolder]
   )
 
-  // Build folder nodes record for DnD context
-  const folderNodesRecord = useMemo(() => {
-    const result: Record<string, FolderTreeNode> = {}
-    const addFolderNodes = (nodes: FolderTreeNode[]) => {
-      for (const node of nodes) {
-        result[node.id] = node
-        addFolderNodes(node.children)
-      }
-    }
-    for (const projectId of Object.keys(foldersByProject)) {
-      addFolderNodes(foldersByProject[projectId])
-    }
-    return result
-  }, [foldersByProject])
-
   const handleDeleteFolder = useCallback(
     (id: string) => {
       const folder = useFolderStore.getState().folders[id]
@@ -289,26 +302,29 @@ export function ConversationList() {
     []
   )
 
+  const handleDeleteProject = useCallback(
+    (id: string) => {
+      const project = projects.find((p) => p.id === id)
+      setItemToDelete({
+        id,
+        name: project?.name || 'folder',
+        type: 'project',
+      })
+      setDeleteDialogOpen(true)
+    },
+    [projects]
+  )
+
   // Filtered pinned and recent for quick filter
   const filteredPinned = useMemo(() => {
-    let result = pinnedConversations.filter((c) => !c.parentId)
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase()
-      result = result.filter((c) => c.title.toLowerCase().includes(query))
-    }
-    return result
-  }, [pinnedConversations, searchQuery])
+    return pinnedConversations.filter((c) => !c.parentId)
+  }, [pinnedConversations])
 
+  // Recent: only conversations NOT in any project (those appear under ProjectSection)
   const filteredRecent = useMemo(() => {
-    let result = recentConversations.filter((c) => !c.parentId)
-
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase()
-      result = result.filter((c) => c.title.toLowerCase().includes(query))
-    }
-
+    const result = recentConversations.filter((c) => !c.parentId && !c.projectId)
     return filterConversationsByQuickFilter(result, quickFilter)
-  }, [recentConversations, searchQuery, quickFilter])
+  }, [recentConversations, quickFilter])
 
   // Build flat list of visible conversation IDs for keyboard navigation
   const visibleConversationIds = useMemo(() => {
@@ -317,17 +333,11 @@ export function ConversationList() {
     // Add pinned conversations
     filteredPinned.forEach((c) => ids.push(c.id))
 
-    // Add conversations from each project (unorganized ones - folders have their own navigation)
-    projects.forEach((project) => {
-      const unorganized = unorganizedByProject[project.id] || []
-      unorganized.forEach((c) => ids.push(c.id))
-    })
-
     // Add recent conversations
     filteredRecent.forEach((c) => ids.push(c.id))
 
     return ids
-  }, [filteredPinned, projects, unorganizedByProject, filteredRecent])
+  }, [filteredPinned, filteredRecent])
 
   // Keyboard navigation handler
   useEffect(() => {
@@ -362,25 +372,22 @@ export function ConversationList() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [focusedConversationId, visibleConversationIds, handleSelectConversation])
 
-  // Sync focused conversation with active conversation
+  // Sync focused conversation with selected conversation
   useEffect(() => {
-    if (activeConversationId && visibleConversationIds.includes(activeConversationId)) {
-      setFocusedConversationId(activeConversationId)
+    if (selectedConversationId && visibleConversationIds.includes(selectedConversationId)) {
+      setFocusedConversationId(selectedConversationId)
     }
-  }, [activeConversationId, visibleConversationIds])
+  }, [selectedConversationId, visibleConversationIds])
 
   // Loading state
-  if ((isLoading || projectsLoading) && !isInitialized) {
-    return <SidebarSkeleton showPinned={false} projectCount={2} conversationCount={4} />
+  if (isLoading && !isInitialized) {
+    return <SidebarSkeleton showPinned={false} projectCount={0} conversationCount={4} />
   }
 
   // Empty state
-  if (conversations.length === 0 && !searchQuery) {
+  if (conversations.length === 0) {
     return (
       <div className="flex flex-col h-full">
-        <div className="p-2">
-          <SearchBar value={searchQuery} onChange={setSearchQuery} />
-        </div>
         <div className="flex flex-col items-center justify-center flex-1 p-6 text-center">
           <div className="rounded-full bg-muted p-3 mb-3">
             <MessageSquare className="h-6 w-6 text-muted-foreground" />
@@ -413,11 +420,6 @@ export function ConversationList() {
       onMoveFolder={handleDndMoveFolder}
     >
       <div className="flex flex-col h-full">
-        {/* Search */}
-        <div className="p-2">
-          <SearchBar value={searchQuery} onChange={setSearchQuery} />
-        </div>
-
         {/* Quick Filters */}
         <QuickFilters
           activeFilter={quickFilter}
@@ -436,9 +438,10 @@ export function ConversationList() {
                 <PinnedSection
                   conversations={filteredPinned}
                   branchesByParent={branchesByParent}
-                  selectedConversationId={activeConversationId}
+                  selectedConversationId={selectedConversationId}
                   focusedConversationId={focusedConversationId}
                   onSelectConversation={handleSelectConversation}
+                  onRenameConversation={handleRenameConversation}
                   onDeleteConversation={handleDeleteConversation}
                   onPinConversation={handlePinConversation}
                   onMoveConversation={handleMoveConversation}
@@ -448,19 +451,11 @@ export function ConversationList() {
             </>
           )}
 
-          {/* Projects Section */}
+          {/* Folders Section (Project-based organization) */}
           {projects.length > 0 && (
             <div className="p-2">
-              <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground flex items-center justify-between">
-                <span>Projects</span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-5 w-5"
-                  title="New project"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                </Button>
+              <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+                <span>Folders</span>
               </div>
               {projects.map((project) => (
                 <ProjectSection
@@ -470,14 +465,18 @@ export function ConversationList() {
                   conversations={conversationsRecord}
                   unorganizedConversations={unorganizedByProject[project.id] || []}
                   branchesByParent={branchesByParent}
-                  selectedConversationId={activeConversationId}
+                  selectedConversationId={selectedConversationId}
                   onSelectConversation={handleSelectConversation}
                   onCreateFolder={handleCreateFolder}
-                  onCreateConversation={handleCreateConversation}
+                  onCreateConversation={handleCreateConversationInProject}
                   onDeleteFolder={handleDeleteFolder}
+                  onRenameConversation={handleRenameConversation}
                   onDeleteConversation={handleDeleteConversation}
                   onPinConversation={handlePinConversation}
                   onMoveConversation={handleMoveConversation}
+                  onEditProject={(id) => router.push(`/projects/${id}/settings`)}
+                  onDeleteProject={handleDeleteProject}
+                  defaultExpanded={projects.length === 1}
                   enableDragDrop={true}
                 />
               ))}
@@ -486,7 +485,7 @@ export function ConversationList() {
 
           {projects.length > 0 && filteredRecent.length > 0 && <Separator />}
 
-          {/* Recent Conversations (no project) */}
+          {/* Recent Conversations (not in any project/folder) */}
           {filteredRecent.length > 0 && (
             <div className="p-2">
               <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground flex items-center gap-1.5">
@@ -499,14 +498,16 @@ export function ConversationList() {
                     key={conv.id}
                     conversation={conv}
                     depth={0}
-                    isSelected={conv.id === activeConversationId}
+                    isSelected={conv.id === selectedConversationId}
                     isFocused={conv.id === focusedConversationId}
                     onSelect={() => handleSelectConversation(conv.id)}
+                    onRename={handleRenameConversation}
+                    onRenameConversation={handleRenameConversation}
                     onDelete={() => handleDeleteConversation(conv.id)}
                     onPin={() => handlePinConversation(conv.id)}
                     onMove={() => handleMoveConversation(conv.id)}
                     branches={branchesByParent[conv.id]}
-                    selectedConversationId={activeConversationId}
+                    selectedConversationId={selectedConversationId}
                     onSelectConversation={handleSelectConversation}
                     onDeleteConversation={handleDeleteConversation}
                     onPinConversation={handlePinConversation}
@@ -518,12 +519,6 @@ export function ConversationList() {
             </div>
           )}
 
-          {/* No results */}
-          {searchQuery && filteredConversations.length === 0 && (
-            <div className="p-4 text-center text-sm text-muted-foreground">
-              No conversations match your search.
-            </div>
-          )}
         </div>
 
         {/* Create Folder Dialog */}
@@ -559,61 +554,4 @@ export function ConversationList() {
       </div>
     </SidebarDndContext>
   )
-}
-
-// Import useFolderStore for the callback
-import { useFolderStore } from '@/stores'
-
-// Helper to build folder tree for a project
-function buildFolderTreeForProject(
-  projectId: string,
-  conversations: Conversation[]
-): FolderTreeNode[] {
-  const folders = Object.values(useFolderStore.getState().folders).filter(
-    (f) => f.projectId === projectId
-  )
-  const expandedFolders = useFolderStore.getState().expandedFolders
-
-  // Build folder-to-conversations map
-  const folderConversations = new Map<string, string[]>()
-  for (const conv of conversations) {
-    if (conv.folderId) {
-      const existing = folderConversations.get(conv.folderId) || []
-      folderConversations.set(conv.folderId, [...existing, conv.id])
-    }
-  }
-
-  const folderMap = new Map<string, FolderTreeNode>()
-
-  // Create all nodes
-  for (const folder of folders) {
-    folderMap.set(folder.id, {
-      ...folder,
-      children: [],
-      conversations: folderConversations.get(folder.id) || [],
-      isExpanded: expandedFolders.has(folder.id),
-    })
-  }
-
-  // Build hierarchy
-  const rootFolders: FolderTreeNode[] = []
-  for (const folder of folders) {
-    const node = folderMap.get(folder.id)!
-    if (folder.parentId && folderMap.has(folder.parentId)) {
-      folderMap.get(folder.parentId)!.children.push(node)
-    } else {
-      rootFolders.push(node)
-    }
-  }
-
-  // Sort children by position
-  const sortChildren = (nodes: FolderTreeNode[]) => {
-    nodes.sort((a, b) => a.position - b.position)
-    for (const node of nodes) {
-      sortChildren(node.children)
-    }
-  }
-  sortChildren(rootFolders)
-
-  return rootFolders
 }

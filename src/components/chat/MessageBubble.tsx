@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { Copy, Check, User, Bot, RotateCcw, Wrench, GitBranch } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -14,6 +14,7 @@ import { isOndoBotStructuredResult } from '@/types/ondobot'
 import { FilePreviewList } from './FilePreview'
 import { ReadAloudButton } from './AudioPlayer'
 import { RoutingIndicator } from './RoutingIndicator'
+import { SelectionTooltip } from './SelectionTooltip'
 import { ModelBadge } from '@/components/model'
 import type { Message, AIProvider, ImageAttachment, FileAttachment } from '@/types'
 import type { RequestIntent } from '@/lib/api/routing'
@@ -28,6 +29,18 @@ interface MessageBubbleProps {
 
 export function MessageBubble({ message, isStreaming, onBranch }: MessageBubbleProps) {
   const [copied, setCopied] = useState(false)
+  const contentRef = useRef<HTMLDivElement>(null)
+
+  const handleAskAboutThis = useCallback(
+    (selectedText: string) => {
+      if (onBranch) {
+        // Store the selected text in sessionStorage so ChatInput can pick it up
+        sessionStorage.setItem('branchContext', selectedText)
+        onBranch(message.id)
+      }
+    },
+    [onBranch, message.id]
+  )
   const user = useCurrentUser()
   const models = useModels()
   const isExecutingTools = useIsExecutingTools()
@@ -107,13 +120,21 @@ export function MessageBubble({ message, isStreaming, onBranch }: MessageBubbleP
         )}
       >
         <div
+          ref={!isUser ? contentRef : undefined}
           className={cn(
-            'rounded-2xl px-4 py-2.5',
+            'relative rounded-2xl px-4 py-2.5',
             isUser
               ? 'bg-primary text-primary-foreground rounded-br-md'
               : 'bg-muted rounded-bl-md'
           )}
         >
+          {/* Selection tooltip for assistant messages */}
+          {!isUser && onBranch && !isStreaming && (
+            <SelectionTooltip
+              containerRef={contentRef}
+              onAskAboutThis={handleAskAboutThis}
+            />
+          )}
           {isUser ? (
             <>
               {imageAttachments.length > 0 && (

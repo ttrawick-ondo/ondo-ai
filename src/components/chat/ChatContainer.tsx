@@ -24,6 +24,11 @@ export function ChatContainer({ conversationId, initialBranchId = null }: ChatCo
   // State to track which branch tab is active (null = main conversation)
   const [activeBranchId, setActiveBranchId] = useState<string | null>(initialBranchId)
 
+  // Sync with URL when clicking different branches in the sidebar
+  useEffect(() => {
+    setActiveBranchId(initialBranchId)
+  }, [initialBranchId])
+
   // Get the main conversation and its branches
   const mainConversation = useChatStore((s) => s.conversations[conversationId])
   const branches = useConversationBranches(conversationId)
@@ -32,11 +37,14 @@ export function ChatContainer({ conversationId, initialBranchId = null }: ChatCo
   const displayConversationId = activeBranchId ?? conversationId
   const displayConversation = useChatStore((s) => s.conversations[displayConversationId])
 
+  // Also load sub-branches if the displayed conversation itself is a branch
+  const subBranches = useConversationBranches(displayConversationId)
+
   // Get messages for the displayed conversation
   const messages = useMessages(displayConversationId)
   const isStreaming = useIsStreaming()
   const streamingMessage = useStreamingMessage()
-  const { branchConversation, loadConversationMessages } = useChatActions()
+  const { branchConversation, deleteConversation, loadConversationMessages } = useChatActions()
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // Load messages for active branch when switching tabs
@@ -71,6 +79,14 @@ export function ChatContainer({ conversationId, initialBranchId = null }: ChatCo
     setActiveBranchId(newBranchId)
   }, [branchConversation, conversationId, messages])
 
+  // Handle deleting a branch from tab close button
+  const handleDeleteBranch = useCallback(async (branchId: string) => {
+    if (activeBranchId === branchId) {
+      setActiveBranchId(null)
+    }
+    await deleteConversation(branchId)
+  }, [activeBranchId, deleteConversation])
+
   // Check if the displayed conversation is a branch (has a parentId)
   const isBranchView = !!displayConversation?.parentId
 
@@ -87,6 +103,7 @@ export function ChatContainer({ conversationId, initialBranchId = null }: ChatCo
           branches={branches}
           activeBranchId={activeBranchId}
           onBranchSelect={setActiveBranchId}
+          onDeleteBranch={handleDeleteBranch}
           onCreateBranch={messages.length > 0 ? handleCreateBranchFromLast : undefined}
         />
       )}
@@ -101,7 +118,7 @@ export function ChatContainer({ conversationId, initialBranchId = null }: ChatCo
           <MessageList
             messages={messages}
             streamingMessage={isStreaming ? streamingMessage : undefined}
-            onBranch={isBranchView ? undefined : handleBranch}
+            onBranch={handleBranch}
           />
           {isStreaming && !streamingMessage && <TypingIndicator />}
         </div>

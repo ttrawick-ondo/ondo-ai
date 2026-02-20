@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import {
   MessageSquare,
   MoreHorizontal,
@@ -31,7 +31,7 @@ interface ConversationItemProps {
   isSelected?: boolean
   isFocused?: boolean
   onSelect: () => void
-  onEdit?: () => void
+  onRename?: (id: string, newTitle: string) => void
   onDelete?: () => void
   onPin?: () => void
   onMove?: () => void
@@ -41,6 +41,7 @@ interface ConversationItemProps {
   branches?: Conversation[]
   selectedConversationId?: string | null
   onSelectConversation?: (id: string) => void
+  onRenameConversation?: (id: string, newTitle: string) => void
   onDeleteConversation?: (id: string) => void
   onPinConversation?: (id: string) => void
   onMoveConversation?: (id: string) => void
@@ -52,7 +53,7 @@ export function ConversationItem({
   isSelected,
   isFocused,
   onSelect,
-  onEdit,
+  onRename,
   onDelete,
   onPin,
   onMove,
@@ -62,16 +63,61 @@ export function ConversationItem({
   branches,
   selectedConversationId,
   onSelectConversation,
+  onRenameConversation,
   onDeleteConversation,
   onPinConversation,
   onMoveConversation,
 }: ConversationItemProps) {
-  const [isHovered, setIsHovered] = useState(false)
   const [isBranchesExpanded, setIsBranchesExpanded] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editTitle, setEditTitle] = useState(conversation.title)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus()
+      inputRef.current.select()
+    }
+  }, [isEditing])
+
+  const handleStartEdit = () => {
+    setEditTitle(conversation.title)
+    setIsEditing(true)
+  }
+
+  const handleConfirmEdit = () => {
+    const trimmed = editTitle.trim()
+    if (trimmed && trimmed !== conversation.title) {
+      onRename?.(conversation.id, trimmed)
+    }
+    setIsEditing(false)
+  }
+
+  const handleCancelEdit = () => {
+    setEditTitle(conversation.title)
+    setIsEditing(false)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      handleConfirmEdit()
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      handleCancelEdit()
+    }
+  }
+
   const isBranch = !!conversation.parentId
   const hasBranches = branches && branches.length > 0
 
-  // Drag hook
+  // Auto-expand branches if a branch is selected
+  useEffect(() => {
+    if (hasBranches && selectedConversationId && branches!.some(b => b.id === selectedConversationId)) {
+      setIsBranchesExpanded(true)
+    }
+  }, [hasBranches, branches, selectedConversationId])
+
   const {
     attributes,
     listeners,
@@ -88,139 +134,154 @@ export function ConversationItem({
 
   return (
     <>
-    <div
-      ref={setNodeRef}
-      className={cn(
-        'group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer transition-colors overflow-hidden',
-        isSelected
-          ? 'bg-secondary text-secondary-foreground'
-          : 'hover:bg-muted text-muted-foreground hover:text-foreground',
-        isFocused && !isSelected && 'ring-1 ring-primary/50 bg-muted/50',
-        isDragging && 'opacity-50'
-      )}
-      style={{ paddingLeft: `${(depth + 1) * 12 + (hasBranches ? 4 : 16)}px` }}
-      onClick={onSelect}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      {...(enableDragDrop ? attributes : {})}
-      {...(enableDragDrop ? listeners : {})}
-    >
-      {/* Branch expand chevron */}
-      {hasBranches && (
-        <button
-          className="shrink-0 p-0.5 rounded hover:bg-accent"
-          onClick={(e) => {
-            e.stopPropagation()
-            setIsBranchesExpanded(!isBranchesExpanded)
-          }}
-        >
-          {isBranchesExpanded ? (
-            <ChevronDown className="h-3 w-3" />
+      <div
+        ref={setNodeRef}
+        className={cn(
+          'group flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[13px] cursor-pointer transition-colors',
+          isSelected
+            ? 'bg-secondary text-secondary-foreground'
+            : 'hover:bg-muted text-muted-foreground hover:text-foreground',
+          isFocused && !isSelected && 'ring-1 ring-primary/50 bg-muted/50',
+          isDragging && 'opacity-50'
+        )}
+        onClick={onSelect}
+        title={showTime ? `${conversation.title} — ${formatRelativeTime(conversation.lastMessageAt)}` : conversation.title}
+        {...(enableDragDrop ? attributes : {})}
+        {...(enableDragDrop ? listeners : {})}
+      >
+        {/* Icon */}
+        <div className="shrink-0">
+          {isBranch && showBranchIndicator ? (
+            <GitBranch className="h-3 w-3" />
           ) : (
-            <ChevronRight className="h-3 w-3" />
+            <MessageSquare className="h-3 w-3" />
           )}
-        </button>
-      )}
+        </div>
 
-      {/* Branch indicator or message icon */}
-      <div className="shrink-0 flex items-center gap-1">
-        {isBranch && showBranchIndicator ? (
-          <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
-        ) : (
-          <MessageSquare className="h-4 w-4" />
-        )}
-        {conversation.pinned && (
-          <Pin className="h-3 w-3 text-amber-500" />
-        )}
-      </div>
+        {/* Title — single line */}
+        <div className="flex-1 min-w-0">
+          {isEditing ? (
+            <input
+              ref={inputRef}
+              type="text"
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              onBlur={handleConfirmEdit}
+              onKeyDown={handleKeyDown}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full bg-background border border-input rounded px-1.5 py-0.5 text-[13px] outline-none focus:ring-1 focus:ring-primary"
+            />
+          ) : (
+            <span className="truncate block leading-snug">
+              {conversation.pinned && (
+                <Pin className="h-2.5 w-2.5 text-amber-500 inline mr-1 -mt-0.5" />
+              )}
+              {conversation.title}
+            </span>
+          )}
+        </div>
 
-      {/* Title and time */}
-      <div className="flex-1 min-w-0 overflow-hidden">
-        <div className="truncate font-medium">{conversation.title}</div>
-        {showTime && (
-          <div className="text-xs text-muted-foreground truncate">
-            {formatRelativeTime(conversation.lastMessageAt)}
-          </div>
-        )}
-      </div>
-
-      {/* Actions dropdown */}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className={cn(
-              'h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity',
-              isSelected && 'opacity-70'
-            )}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <MoreHorizontal className="h-4 w-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-48">
-          {onPin && (
-            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onPin() }}>
-              {conversation.pinned ? (
-                <>
-                  <PinOff className="h-4 w-4 mr-2" />
-                  Unpin
-                </>
+        {/* Right side: branch badge + hover menu */}
+        <div className="shrink-0 flex items-center">
+          {/* Branch count badge */}
+          {hasBranches && (
+            <button
+              className="flex items-center gap-px text-[10px] text-muted-foreground hover:text-foreground transition-colors group-hover:mr-0.5"
+              onClick={(e) => {
+                e.stopPropagation()
+                setIsBranchesExpanded(!isBranchesExpanded)
+              }}
+              title={isBranchesExpanded ? 'Collapse branches' : 'Expand branches'}
+            >
+              <GitBranch className="h-2.5 w-2.5" />
+              <span className="tabular-nums">{branches!.length}</span>
+              {isBranchesExpanded ? (
+                <ChevronDown className="h-2.5 w-2.5" />
               ) : (
+                <ChevronRight className="h-2.5 w-2.5" />
+              )}
+            </button>
+          )}
+
+          {/* Actions — hover only */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  'h-4 w-4 shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity',
+                  isSelected && 'opacity-70'
+                )}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <MoreHorizontal className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              {onPin && (
+                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onPin() }}>
+                  {conversation.pinned ? (
+                    <>
+                      <PinOff className="h-3.5 w-3.5 mr-2" />
+                      Unpin
+                    </>
+                  ) : (
+                    <>
+                      <Pin className="h-3.5 w-3.5 mr-2" />
+                      Pin
+                    </>
+                  )}
+                </DropdownMenuItem>
+              )}
+              {onRename && (
+                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleStartEdit() }}>
+                  <Pencil className="h-3.5 w-3.5 mr-2" />
+                  Rename
+                </DropdownMenuItem>
+              )}
+              {onMove && (
+                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onMove() }}>
+                  <MoveRight className="h-3.5 w-3.5 mr-2" />
+                  Move
+                </DropdownMenuItem>
+              )}
+              {onDelete && (
                 <>
-                  <Pin className="h-4 w-4 mr-2" />
-                  Pin
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-destructive"
+                    onClick={(e) => { e.stopPropagation(); onDelete() }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 mr-2" />
+                    Delete
+                  </DropdownMenuItem>
                 </>
               )}
-            </DropdownMenuItem>
-          )}
-          {onEdit && (
-            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit() }}>
-              <Pencil className="h-4 w-4 mr-2" />
-              Rename
-            </DropdownMenuItem>
-          )}
-          {onMove && (
-            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onMove() }}>
-              <MoveRight className="h-4 w-4 mr-2" />
-              Move
-            </DropdownMenuItem>
-          )}
-          {onDelete && (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="text-destructive"
-                onClick={(e) => { e.stopPropagation(); onDelete() }}
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                Delete
-              </DropdownMenuItem>
-            </>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
-
-    {/* Expanded branch conversations */}
-    {hasBranches && isBranchesExpanded && (
-      <div className="flex flex-col gap-0.5">
-        {branches!.map((branch) => (
-          <ConversationItem
-            key={branch.id}
-            conversation={branch}
-            depth={depth + 1}
-            isSelected={branch.id === selectedConversationId}
-            onSelect={() => { onSelectConversation?.(branch.id) }}
-            onDelete={onDeleteConversation ? () => onDeleteConversation(branch.id) : undefined}
-            onPin={onPinConversation ? () => onPinConversation(branch.id) : undefined}
-            onMove={onMoveConversation ? () => onMoveConversation(branch.id) : undefined}
-            enableDragDrop={enableDragDrop}
-          />
-        ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
-    )}
+
+      {/* Expanded branches — indented with left border */}
+      {hasBranches && isBranchesExpanded && (
+        <div className="ml-2.5 pl-1.5 border-l border-border/40">
+          {branches!.map((branch) => (
+            <ConversationItem
+              key={branch.id}
+              conversation={branch}
+              depth={depth + 1}
+              isSelected={branch.id === selectedConversationId}
+              onSelect={() => { onSelectConversation?.(branch.id) }}
+              onRename={onRenameConversation}
+              onDelete={onDeleteConversation ? () => onDeleteConversation(branch.id) : undefined}
+              onPin={onPinConversation ? () => onPinConversation(branch.id) : undefined}
+              onMove={onMoveConversation ? () => onMoveConversation(branch.id) : undefined}
+              enableDragDrop={enableDragDrop}
+            />
+          ))}
+        </div>
+      )}
     </>
   )
 }

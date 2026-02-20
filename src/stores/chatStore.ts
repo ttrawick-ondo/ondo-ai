@@ -33,6 +33,7 @@ registerBuiltinTools()
 interface ChatState {
   conversations: Record<string, Conversation>
   activeConversationId: string | null
+  activeBranchId: string | null
   messagesByConversation: Record<string, Message[]>
   isStreaming: boolean
   streamingMessage: string
@@ -46,7 +47,7 @@ interface ChatState {
 }
 
 interface ChatActions {
-  setActiveConversation: (id: string | null) => void
+  setActiveConversation: (id: string | null, branchId?: string | null) => void
   createConversation: (title?: string, projectId?: string, modelId?: string, folderId?: string | null, workspaceId?: string | null) => Promise<string>
   deleteConversation: (id: string) => Promise<void>
   updateConversationTitle: (id: string, title: string) => Promise<void>
@@ -79,6 +80,7 @@ export const useChatStore = create<ChatStore>()(
       (set, get) => ({
         conversations: {},
         activeConversationId: null,
+        activeBranchId: null,
         messagesByConversation: {},
         isStreaming: false,
         streamingMessage: '',
@@ -91,8 +93,8 @@ export const useChatStore = create<ChatStore>()(
         pendingToolCalls: [],
 
         actions: {
-          setActiveConversation: (id) => {
-            set({ activeConversationId: id })
+          setActiveConversation: (id, branchId = null) => {
+            set({ activeConversationId: id, activeBranchId: branchId })
           },
 
           createConversation: async (title = 'New conversation', projectId, modelId, folderId = null, workspaceId = null) => {
@@ -176,16 +178,31 @@ export const useChatStore = create<ChatStore>()(
             const existingMessages = get().messagesByConversation[id]
             if (!existing) return
 
-            // Optimistic delete
+            // Find branch conversations that have this as parent
+            const branchIds = Object.values(get().conversations)
+              .filter((c) => c.parentId === id)
+              .map((c) => c.id)
+            const branchSnapshots = branchIds.map((bid) => ({
+              id: bid,
+              conversation: get().conversations[bid],
+              messages: get().messagesByConversation[bid],
+            }))
+
+            // Optimistic delete (conversation + its branches)
             set((state) => {
-              const { [id]: _, ...conversations } = state.conversations
-              const { [id]: __, ...messagesByConversation } = state.messagesByConversation
+              const idsToRemove = [id, ...branchIds]
+              const conversations = { ...state.conversations }
+              const messagesByConversation = { ...state.messagesByConversation }
+              for (const rid of idsToRemove) {
+                delete conversations[rid]
+                delete messagesByConversation[rid]
+              }
 
               return {
                 conversations,
                 messagesByConversation,
                 activeConversationId:
-                  state.activeConversationId === id ? null : state.activeConversationId,
+                  idsToRemove.includes(state.activeConversationId ?? '') ? null : state.activeConversationId,
                 isSyncing: true,
               }
             })
@@ -194,12 +211,16 @@ export const useChatStore = create<ChatStore>()(
               await conversationApi.deleteConversation(id)
               set({ isSyncing: false })
             } catch (error) {
-              // Rollback
-              set((state) => ({
-                conversations: { ...state.conversations, [id]: existing },
-                messagesByConversation: { ...state.messagesByConversation, [id]: existingMessages || [] },
-                isSyncing: false,
-              }))
+              // Rollback main conversation and branches
+              set((state) => {
+                const conversations = { ...state.conversations, [id]: existing }
+                const messagesByConversation = { ...state.messagesByConversation, [id]: existingMessages || [] }
+                for (const snap of branchSnapshots) {
+                  if (snap.conversation) conversations[snap.id] = snap.conversation
+                  if (snap.messages) messagesByConversation[snap.id] = snap.messages
+                }
+                return { conversations, messagesByConversation, isSyncing: false }
+              })
 
               const message = error instanceof Error ? error.message : 'Failed to delete conversation'
               toast.error(message)
@@ -677,9 +698,10 @@ export const useChatStore = create<ChatStore>()(
             const now = new Date()
             const branchTitle = title || `Branch of ${sourceConversation.title}`
 
-            // Copy messages up to and including the branch point
+            // Deep-clone messages up to and including the branch point
+            // to prevent shared references between source and branch
             const copiedMessages = sourceMessages.slice(0, branchPointIndex + 1).map((msg) => ({
-              ...msg,
+              ...JSON.parse(JSON.stringify(msg)),
               id: `msg-${generateId()}`,
               conversationId: tempId,
               createdAt: new Date(msg.createdAt),
@@ -818,8 +840,9 @@ export const useChatStore = create<ChatStore>()(
       {
         name: 'chat-store',
         partialize: (state) => ({
-          // Only persist activeConversationId, not conversations (they come from DB)
+          // Only persist active IDs, not conversations (they come from DB)
           activeConversationId: state.activeConversationId,
+          activeBranchId: state.activeBranchId,
           enabledTools: state.enabledTools,
         }),
       }
