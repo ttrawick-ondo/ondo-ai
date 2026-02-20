@@ -87,16 +87,14 @@ export function CitationInline({ citation, onClick }: CitationInlineProps) {
             variant="ghost"
             size="sm"
             className="w-full justify-start gap-2 h-8"
-            asChild
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              window.open(citation.source.url, '_blank', 'noopener,noreferrer')
+            }}
           >
-            <a
-              href={citation.source.url}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <ExternalLink className="h-3 w-3" />
-              Open in {getSourceTypeLabel(citation.source.type)}
-            </a>
+            <ExternalLink className="h-3 w-3" />
+            Open in {getSourceTypeLabel(citation.source.type)}
           </Button>
         </div>
       </PopoverContent>

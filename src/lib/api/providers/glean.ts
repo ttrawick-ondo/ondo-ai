@@ -16,41 +16,58 @@ import type {
   GleanAgentSchema,
   GleanCitation,
 } from '../glean/types'
+import type { Citation } from '@/types/chat'
 import { BaseProvider } from './base'
 import { getModelConfig } from '../config/providers'
 import { handleProviderError, ModelNotFoundError, APIError } from '../errors/apiErrors'
 import { createStartEvent, createDeltaEvent, createDoneEvent, createErrorEvent } from '../streaming/encoder'
+import { parseGleanCitations } from '@/lib/utils/citationParser'
 
-interface GleanChatRequest {
-  messages: Array<{
-    role: 'user' | 'assistant'
-    content: string
-  }>
+// Glean-native message format
+interface GleanChatMessage {
+  author: 'USER' | 'GLEAN_AI'
+  messageType?: 'CONTENT' | 'UPDATE' | 'CONTEXT' | 'CONTROL' | 'CONTROL_START' | 'CONTROL_FINISH' | 'ERROR'
+  fragments?: Array<{ text?: string; citation?: GleanMessageCitation }>
+}
+
+interface GleanMessageCitation {
+  sourceDocument?: {
+    title?: string
+    url?: string
+    datasource?: string
+  }
+  referenceRanges?: Array<{ startIndex: number; endIndex: number }>
+}
+
+interface GleanChatApiRequest {
+  messages: GleanChatMessage[]
   agentId?: string
   stream?: boolean
+  saveChat?: boolean
+  chatId?: string
 }
 
-interface GleanChatResponse {
-  id: string
-  message: {
-    role: 'assistant'
-    content: string
-  }
-  citations?: GleanInternalCitation[]
-}
-
-interface GleanInternalCitation {
-  title: string
-  url: string
-  snippet: string
-  source: string
+interface GleanChatApiResponse {
+  messages?: GleanChatMessage[]
+  chatId?: string
+  followUpPrompts?: string[]
+  // Deprecated but still populated
+  citations?: Array<{
+    sourceDocument?: { title?: string; url?: string }
+    snippet?: string
+  }>
 }
 
 export class GleanProvider extends BaseProvider {
   provider = 'glean' as const
 
+  // Cache Glean chatIds by conversationId for multi-turn context
+  private chatIdMap = new Map<string, string>()
+
   private getBaseUrl(): string {
-    return this.getApiUrl() || 'https://api.glean.com/v1'
+    const url = this.getApiUrl() || 'https://api.glean.com/rest/api/v1'
+    // Normalize: strip trailing slash to avoid double-slash in URL construction
+    return url.replace(/\/+$/, '')
   }
 
   protected async healthCheck(): Promise<void> {
@@ -70,6 +87,95 @@ export class GleanProvider extends BaseProvider {
     }
   }
 
+  /**
+   * Extract the latest user message in Glean's native format.
+   * Glean manages conversation context server-side via chatId,
+   * so we only send the newest user message (not the full history).
+   */
+  private toGleanMessages(messages: ChatCompletionRequest['messages']): GleanChatMessage[] {
+    // Find the last user message
+    const lastUserMsg = [...messages].reverse().find(
+      (msg) => msg.role === 'user'
+    )
+    if (!lastUserMsg) return []
+
+    const textContent = typeof lastUserMsg.content === 'string'
+      ? lastUserMsg.content
+      : lastUserMsg.content?.find((p) => p.type === 'text')?.text || ''
+
+    return [{
+      author: 'USER' as const,
+      messageType: 'CONTENT' as const,
+      fragments: [{ text: textContent }],
+    }]
+  }
+
+  /**
+   * Extract text content and rich citation data from a Glean response
+   */
+  private extractContent(response: GleanChatApiResponse): { content: string; rawCitations: Array<{ title: string; url: string; datasource?: string; snippet?: string }> } {
+    let content = ''
+    const rawCitations: Array<{ title: string; url: string; datasource?: string; snippet?: string }> = []
+
+    if (response.messages) {
+      for (const msg of response.messages) {
+        if (msg.author !== 'GLEAN_AI') continue
+        if (msg.messageType && msg.messageType !== 'CONTENT') continue
+        if (msg.fragments) {
+          for (const fragment of msg.fragments) {
+            if (fragment.text) {
+              content += fragment.text
+            }
+            if (fragment.citation?.sourceDocument) {
+              const doc = fragment.citation.sourceDocument
+              if (doc.title && doc.url) {
+                rawCitations.push({ title: doc.title, url: doc.url, datasource: doc.datasource })
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Also check deprecated top-level citations
+    if (response.citations) {
+      for (const c of response.citations) {
+        if (c.sourceDocument?.title && c.sourceDocument?.url) {
+          const exists = rawCitations.some((existing) => existing.url === c.sourceDocument!.url)
+          if (!exists) {
+            rawCitations.push({
+              title: c.sourceDocument.title,
+              url: c.sourceDocument.url,
+              snippet: c.snippet,
+            })
+          } else if (c.snippet) {
+            // Merge snippet into existing citation if missing
+            const existing = rawCitations.find((existing) => existing.url === c.sourceDocument!.url)
+            if (existing && !existing.snippet) {
+              existing.snippet = c.snippet
+            }
+          }
+        }
+      }
+    }
+
+    return { content, rawCitations }
+  }
+
+  /**
+   * Convert raw citation data to structured Citation[] objects
+   */
+  private buildCitations(rawCitations: Array<{ title: string; url: string; datasource?: string; snippet?: string }>): Citation[] {
+    return parseGleanCitations(
+      rawCitations.map((c) => ({
+        title: c.title,
+        url: c.url,
+        snippet: c.snippet,
+        sourceType: c.datasource,
+      }))
+    )
+  }
+
   async complete(request: ChatCompletionRequest): Promise<ChatCompletionResponse> {
     const startTime = Date.now()
     const model = getModelConfig(request.model)
@@ -79,21 +185,17 @@ export class GleanProvider extends BaseProvider {
     }
 
     try {
-      const gleanRequest: GleanChatRequest = {
-        // Filter out tool messages (not supported by Glean)
-        messages: request.messages
-          .filter((msg) => msg.role !== 'tool')
-          .map((msg) => {
-            // Extract text content (Glean doesn't support images)
-            const textContent = typeof msg.content === 'string'
-              ? msg.content
-              : msg.content?.find((p) => p.type === 'text')?.text || ''
-            return {
-              role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
-              content: textContent,
-            }
-          }),
+      const gleanRequest: GleanChatApiRequest = {
+        messages: this.toGleanMessages(request.messages),
+        saveChat: true,
         stream: false,
+      }
+
+      // Reuse Glean's chatId for multi-turn conversation context
+      const conversationId = request.conversationId || 'default'
+      const existingChatId = this.chatIdMap.get(conversationId)
+      if (existingChatId) {
+        gleanRequest.chatId = existingChatId
       }
 
       // If the model ID contains an agent ID, extract it
@@ -112,16 +214,15 @@ export class GleanProvider extends BaseProvider {
         throw new APIError(`Glean API error: ${errorText}`, response.status)
       }
 
-      const data: GleanChatResponse = await response.json()
+      const data: GleanChatApiResponse = await response.json()
 
-      // Append citations if available
-      let content = data.message.content
-      if (data.citations && data.citations.length > 0) {
-        content += '\n\n---\n**Sources:**\n'
-        data.citations.forEach((citation, index) => {
-          content += `${index + 1}. [${citation.title}](${citation.url})\n`
-        })
+      // Store chatId for future turns in this conversation
+      if (data.chatId) {
+        this.chatIdMap.set(conversationId, data.chatId)
       }
+
+      const { content, rawCitations } = this.extractContent(data)
+      const structuredCitations = rawCitations.length > 0 ? this.buildCitations(rawCitations) : undefined
 
       // Estimate tokens (Glean doesn't provide token counts)
       const inputTokens = await this.countTokens(request.messages)
@@ -134,7 +235,7 @@ export class GleanProvider extends BaseProvider {
       }
 
       return {
-        id: data.id,
+        id: data.chatId || this.generateId(),
         message: {
           role: 'assistant',
           content,
@@ -146,6 +247,7 @@ export class GleanProvider extends BaseProvider {
           finishReason: 'stop',
         },
         usage,
+        ...(structuredCitations && { citations: structuredCitations }),
       }
     } catch (error) {
       throw handleProviderError(error, 'glean')
@@ -164,21 +266,17 @@ export class GleanProvider extends BaseProvider {
     yield createStartEvent(id)
 
     try {
-      const gleanRequest: GleanChatRequest = {
-        // Filter out tool messages (not supported by Glean)
-        messages: request.messages
-          .filter((msg) => msg.role !== 'tool')
-          .map((msg) => {
-            // Extract text content (Glean doesn't support images)
-            const textContent = typeof msg.content === 'string'
-              ? msg.content
-              : msg.content?.find((p) => p.type === 'text')?.text || ''
-            return {
-              role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
-              content: textContent,
-            }
-          }),
+      const gleanRequest: GleanChatApiRequest = {
+        messages: this.toGleanMessages(request.messages),
+        saveChat: true,
         stream: true,
+      }
+
+      // Reuse Glean's chatId for multi-turn conversation context
+      const conversationId = request.conversationId || 'default'
+      const existingChatId = this.chatIdMap.get(conversationId)
+      if (existingChatId) {
+        gleanRequest.chatId = existingChatId
       }
 
       if (request.model.startsWith('glean-agent-')) {
@@ -203,43 +301,74 @@ export class GleanProvider extends BaseProvider {
 
       const decoder = new TextDecoder()
       let fullContent = ''
-      let citations: GleanInternalCitation[] = []
+      const allRawCitations: Array<{ title: string; url: string; datasource?: string; snippet?: string }> = []
+      let buffer = ''
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
 
-        const chunk = decoder.decode(value, { stream: true })
-        const lines = chunk.split('\n')
+        buffer += decoder.decode(value, { stream: true })
+
+        // Glean streams newline-delimited JSON (each line is a ChatResponse)
+        const lines = buffer.split('\n')
+        // Keep the last potentially incomplete line in the buffer
+        buffer = lines.pop() || ''
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6)
-            if (data === '[DONE]') continue
+          const trimmed = line.trim()
+          if (!trimmed) continue
 
-            try {
-              const parsed = JSON.parse(data)
-              if (parsed.delta) {
-                fullContent += parsed.delta
-                yield createDeltaEvent(parsed.delta)
-              }
-              if (parsed.citations) {
-                citations = parsed.citations
-              }
-            } catch {
-              // Ignore parse errors
+          try {
+            const parsed: GleanChatApiResponse = JSON.parse(trimmed)
+
+            // Capture chatId from streamed responses for multi-turn
+            if (parsed.chatId) {
+              this.chatIdMap.set(conversationId, parsed.chatId)
             }
+
+            const { content: chunkContent, rawCitations } = this.extractContent(parsed)
+
+            if (chunkContent) {
+              fullContent += chunkContent
+              yield createDeltaEvent(chunkContent)
+            }
+
+            for (const c of rawCitations) {
+              if (!allRawCitations.some((existing) => existing.url === c.url)) {
+                allRawCitations.push(c)
+              }
+            }
+          } catch {
+            // Ignore parse errors for incomplete lines
           }
         }
       }
 
-      // Append citations
-      if (citations.length > 0) {
-        const citationText = '\n\n---\n**Sources:**\n' +
-          citations.map((c, i) => `${i + 1}. [${c.title}](${c.url})`).join('\n')
-        fullContent += citationText
-        yield createDeltaEvent(citationText)
+      // Process any remaining buffer
+      if (buffer.trim()) {
+        try {
+          const parsed: GleanChatApiResponse = JSON.parse(buffer.trim())
+          if (parsed.chatId) {
+            this.chatIdMap.set(conversationId, parsed.chatId)
+          }
+          const { content: chunkContent, rawCitations } = this.extractContent(parsed)
+          if (chunkContent) {
+            fullContent += chunkContent
+            yield createDeltaEvent(chunkContent)
+          }
+          for (const c of rawCitations) {
+            if (!allRawCitations.some((existing) => existing.url === c.url)) {
+              allRawCitations.push(c)
+            }
+          }
+        } catch {
+          // Ignore
+        }
       }
+
+      // Build structured citations for the UI
+      const structuredCitations = allRawCitations.length > 0 ? this.buildCitations(allRawCitations) : undefined
 
       const inputTokens = await this.countTokens(request.messages)
       const outputTokens = Math.ceil(fullContent.length / 4)
@@ -255,7 +384,7 @@ export class GleanProvider extends BaseProvider {
         provider: 'glean',
         processingTimeMs: Date.now() - startTime,
         finishReason: 'stop',
-      })
+      }, structuredCitations)
     } catch (error) {
       const apiError = handleProviderError(error, 'glean')
       yield createErrorEvent(apiError.message)
@@ -278,7 +407,7 @@ export class GleanProvider extends BaseProvider {
   async searchAgents(request?: GleanAgentSearchRequest): Promise<GleanAgentSearchResponse> {
     try {
       const response = await fetch(
-        `${this.getBaseUrl()}/rest/api/v1/agents/search`,
+        `${this.getBaseUrl()}/agents/search`,
         {
           method: 'POST',
           headers: this.getHeaders(),
@@ -308,7 +437,7 @@ export class GleanProvider extends BaseProvider {
   async getAgent(agentId: string): Promise<GleanAgent> {
     try {
       const response = await fetch(
-        `${this.getBaseUrl()}/rest/api/v1/agents/${agentId}`,
+        `${this.getBaseUrl()}/agents/${agentId}`,
         {
           headers: this.getHeaders(),
         }
@@ -332,7 +461,7 @@ export class GleanProvider extends BaseProvider {
   async getAgentSchemas(agentId: string): Promise<GleanAgentSchema> {
     try {
       const response = await fetch(
-        `${this.getBaseUrl()}/rest/api/v1/agents/${agentId}/schemas`,
+        `${this.getBaseUrl()}/agents/${agentId}/schemas`,
         {
           headers: this.getHeaders(),
         }
@@ -356,7 +485,7 @@ export class GleanProvider extends BaseProvider {
   async runAgentBlocking(request: GleanAgentRunRequest): Promise<GleanAgentRunResponse> {
     try {
       const response = await fetch(
-        `${this.getBaseUrl()}/rest/api/v1/agents/runs/wait`,
+        `${this.getBaseUrl()}/agents/runs/wait`,
         {
           method: 'POST',
           headers: this.getHeaders(),
@@ -385,7 +514,7 @@ export class GleanProvider extends BaseProvider {
   ): AsyncGenerator<{ type: string; content?: string; citations?: GleanCitation[]; error?: string }> {
     try {
       const response = await fetch(
-        `${this.getBaseUrl()}/rest/api/v1/agents/runs/stream`,
+        `${this.getBaseUrl()}/agents/runs/stream`,
         {
           method: 'POST',
           headers: {
@@ -444,7 +573,7 @@ export class GleanProvider extends BaseProvider {
    */
   async listDataSources(): Promise<GleanDataSource[]> {
     try {
-      const response = await fetch(`${this.getBaseUrl()}/api/v1/datasources`, {
+      const response = await fetch(`${this.getBaseUrl()}/datasources`, {
         headers: this.getHeaders(),
       })
 

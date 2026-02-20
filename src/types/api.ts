@@ -1,5 +1,5 @@
 import type { AIProvider, ModelConfig } from './model'
-import type { Message, MessageRole, ContentPart, ImageAttachment, FileAttachment } from './chat'
+import type { Message, MessageRole, ContentPart, ImageAttachment, FileAttachment, Citation } from './chat'
 import type { ToolAPIFormat, ToolCall } from './tools'
 
 // Chat completion request
@@ -47,6 +47,8 @@ export interface ChatCompletionResponse {
   }
   metadata: ChatCompletionMetadata
   usage: TokenUsage
+  // Citations from knowledge providers (e.g. Glean)
+  citations?: Citation[]
 }
 
 export interface ChatCompletionMetadata {
@@ -97,6 +99,8 @@ export interface StreamEventData {
       arguments?: string
     }
   }
+  // Citations (e.g. from Glean responses)
+  citations?: Citation[]
 }
 
 // Provider list response

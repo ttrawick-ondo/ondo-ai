@@ -1,4 +1,5 @@
 import type { StreamEvent, StreamEventData, TokenUsage, ChatCompletionMetadata } from '@/types'
+import type { Citation } from '@/types/chat'
 import type { ToolCall } from '@/types/tools'
 
 const encoder = new TextEncoder()
@@ -30,9 +31,10 @@ export function createDeltaEvent(delta: string): StreamEvent {
 export function createDoneEvent(
   content: string,
   usage: TokenUsage,
-  metadata: ChatCompletionMetadata
+  metadata: ChatCompletionMetadata,
+  citations?: Citation[]
 ): StreamEvent {
-  return createStreamEvent('done', { content, usage, metadata })
+  return createStreamEvent('done', { content, usage, metadata, ...(citations && { citations }) })
 }
 
 export function createErrorEvent(error: string): StreamEvent {

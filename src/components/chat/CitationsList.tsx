@@ -1,146 +1,125 @@
 'use client'
 
 import { useState } from 'react'
-import { ChevronDown, ChevronUp, ExternalLink, BookOpen } from 'lucide-react'
+import { ExternalLink, BookOpen } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible'
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from '@/components/ui/sheet'
 import { SourceTypeIcon, getSourceTypeLabel } from './SourceTypeIcon'
-import type { Citation, CitationSourceType } from '@/types'
+import type { Citation } from '@/types'
 
 interface CitationsListProps {
   citations: Citation[]
   defaultExpanded?: boolean
 }
 
-export function CitationsList({ citations, defaultExpanded = false }: CitationsListProps) {
-  const [isExpanded, setIsExpanded] = useState(defaultExpanded)
-  const [showAll, setShowAll] = useState(false)
+export function CitationsList({ citations }: CitationsListProps) {
+  const [panelOpen, setPanelOpen] = useState(false)
 
   if (citations.length === 0) return null
 
-  // Group citations by source type
-  const groupedCitations = citations.reduce((acc, citation) => {
-    const type = citation.source.type
-    if (!acc[type]) {
-      acc[type] = []
+  const handleOpenUrl = (e: React.MouseEvent, url: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (url && url !== '#') {
+      window.open(url, '_blank', 'noopener,noreferrer')
     }
-    acc[type].push(citation)
-    return acc
-  }, {} as Record<CitationSourceType, Citation[]>)
+  }
 
-  const displayCitations = showAll ? citations : citations.slice(0, 5)
-  const hasMore = citations.length > 5
+  // Get unique source types for the compact badge (max 3 icons)
+  const uniqueSourceTypes = Array.from(new Set(citations.map((c) => c.source.type))).slice(0, 3)
 
   return (
-    <Collapsible open={isExpanded} onOpenChange={setIsExpanded} className="mt-3">
-      <CollapsibleTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-full justify-between h-8 px-2 hover:bg-muted/50"
+    <>
+      {/* Compact sources badge — stacked unique source icons + count, opens panel */}
+      <div className="mt-3">
+        <button
+          onClick={() => setPanelOpen(true)}
+          className={cn(
+            'inline-flex items-center gap-2 px-3 py-1.5 rounded-full',
+            'text-sm font-medium',
+            'bg-muted hover:bg-muted/80 text-foreground',
+            'border border-border',
+            'transition-colors cursor-pointer'
+          )}
         >
-          <div className="flex items-center gap-2">
-            <BookOpen className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">
-              Sources ({citations.length})
-            </span>
+          <div className="flex -space-x-0.5">
+            {uniqueSourceTypes.map((type) => (
+              <SourceTypeIcon key={type} type={type} size="sm" />
+            ))}
           </div>
-          {isExpanded ? (
-            <ChevronUp className="h-4 w-4 text-muted-foreground" />
-          ) : (
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-          )}
-        </Button>
-      </CollapsibleTrigger>
-
-      <CollapsibleContent>
-        <div className="pt-2 space-y-2">
-          {displayCitations.map((citation) => (
-            <CitationCard key={citation.id} citation={citation} />
-          ))}
-
-          {hasMore && !showAll && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full h-7 text-xs"
-              onClick={() => setShowAll(true)}
-            >
-              Show {citations.length - 5} more sources
-            </Button>
-          )}
-
-          {showAll && hasMore && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full h-7 text-xs"
-              onClick={() => setShowAll(false)}
-            >
-              Show less
-            </Button>
-          )}
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
-  )
-}
-
-interface CitationCardProps {
-  citation: Citation
-}
-
-function CitationCard({ citation }: CitationCardProps) {
-  return (
-    <a
-      href={citation.source.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className={cn(
-        'block rounded-lg border p-2',
-        'hover:bg-muted/50 transition-colors',
-        'focus:outline-none focus:ring-2 focus:ring-ring'
-      )}
-    >
-      <div className="flex items-start gap-2">
-        <Badge variant="secondary" className="h-5 w-5 p-0 justify-center shrink-0">
-          {citation.number}
-        </Badge>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
-            <SourceTypeIcon type={citation.source.type} size="sm" />
-            <span className="text-xs font-medium truncate">
-              {citation.source.title}
-            </span>
-            <ExternalLink className="h-3 w-3 text-muted-foreground shrink-0 ml-auto" />
-          </div>
-          {citation.snippet && (
-            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-              {citation.snippet}
-            </p>
-          )}
-          <div className="flex items-center gap-2 mt-1">
-            <span className="text-[10px] text-muted-foreground">
-              {getSourceTypeLabel(citation.source.type)}
-            </span>
-            {citation.source.author && (
-              <>
-                <span className="text-[10px] text-muted-foreground">·</span>
-                <span className="text-[10px] text-muted-foreground">
-                  {citation.source.author}
-                </span>
-              </>
-            )}
-          </div>
-        </div>
+          <span>{citations.length} sources</span>
+        </button>
       </div>
-    </a>
+
+      {/* Slide-out panel */}
+      <Sheet open={panelOpen} onOpenChange={setPanelOpen}>
+        <SheetContent side="right" className="w-[380px] sm:max-w-[380px] overflow-y-auto">
+          <SheetHeader className="pb-4">
+            <SheetTitle className="flex items-center gap-2">
+              <BookOpen className="h-4 w-4" />
+              Sources ({citations.length})
+            </SheetTitle>
+            <SheetDescription>
+              References from your knowledge base
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="space-y-3">
+            {citations.map((citation) => (
+              <div
+                key={citation.id}
+                className="rounded-lg border border-border hover:border-border/80 hover:bg-muted/30 p-3 transition-colors"
+              >
+                <div className="flex items-start gap-2.5">
+                  <Badge variant="secondary" className="h-5 w-5 p-0 justify-center shrink-0 text-[10px]">
+                    {citation.number}
+                  </Badge>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <SourceTypeIcon type={citation.source.type} size="sm" />
+                      <span className="text-xs text-muted-foreground">
+                        {getSourceTypeLabel(citation.source.type)}
+                      </span>
+                    </div>
+                    <p className="text-sm font-medium mt-1 line-clamp-2">
+                      {citation.source.title}
+                    </p>
+                    {citation.snippet && (
+                      <p className="text-xs text-muted-foreground mt-1.5 line-clamp-3">
+                        {citation.snippet}
+                      </p>
+                    )}
+                    {citation.source.author && (
+                      <p className="text-[11px] text-muted-foreground mt-1.5">
+                        by {citation.source.author}
+                        {citation.source.date && ` · ${citation.source.date}`}
+                      </p>
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-2 h-7 text-xs gap-1.5"
+                      onClick={(e) => handleOpenUrl(e, citation.source.url)}
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      Open source
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </SheetContent>
+      </Sheet>
+    </>
   )
 }
 

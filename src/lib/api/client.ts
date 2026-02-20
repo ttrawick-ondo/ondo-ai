@@ -318,6 +318,7 @@ export class ChatClient {
                     },
                     metadata: event.data.metadata,
                     usage: event.data.usage,
+                    ...(event.data.citations && { citations: event.data.citations }),
                   })
                 }
                 break

@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { create } from 'zustand'
 import { devtools, persist } from 'zustand/middleware'
 import { toast } from 'sonner'
-import type { Conversation, Message, SendMessageInput, AIProvider, ToolCall, ToolExecutionRecord } from '@/types'
+import type { Conversation, Message, Citation, SendMessageInput, AIProvider, ToolCall, ToolExecutionRecord } from '@/types'
 import { generateId } from '@/lib/utils'
 import { conversationApi } from '@/lib/api/client/conversations'
 import { registerBuiltinTools } from '@/lib/tools'
@@ -484,10 +484,25 @@ export const useChatStore = create<ChatStore>()(
               const messages = await conversationApi.getMessages(conversationId)
 
               // Map API response to Message type with proper date handling
-              const mappedMessages: Message[] = messages.map((msg) => ({
-                ...msg,
-                createdAt: new Date(msg.createdAt),
-              }))
+              // Extract citations from metadata (stored there for persistence)
+              const mappedMessages: Message[] = messages.map((msg) => {
+                const meta = msg.metadata as Record<string, unknown> | null | undefined
+                const citations = meta?.citations as Citation[] | undefined
+                // Remove citations from metadata to avoid duplication on the Message object
+                if (meta && 'citations' in meta) {
+                  const { citations: _, ...restMeta } = meta
+                  return {
+                    ...msg,
+                    metadata: restMeta as Message['metadata'],
+                    citations,
+                    createdAt: new Date(msg.createdAt),
+                  }
+                }
+                return {
+                  ...msg,
+                  createdAt: new Date(msg.createdAt),
+                }
+              })
 
               set((state) => ({
                 messagesByConversation: {

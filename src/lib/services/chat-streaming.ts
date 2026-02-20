@@ -15,6 +15,7 @@ import type {
   MessageRole,
   ChatCompletionMessage,
   OndoBotStructuredResult,
+  Citation,
 } from '@/types'
 import { generateId } from '@/lib/utils'
 import { chatClient, type RoutingInfo } from '@/lib/api/client'
@@ -130,6 +131,8 @@ export function createAssistantMessage(
     }
     // OndoBot structured result data for rich UI rendering
     ondoBotStructured?: OndoBotStructuredResult
+    // Citations from knowledge providers (e.g. Glean)
+    citations?: Citation[]
   }
 ): Message {
   return {
@@ -138,6 +141,7 @@ export function createAssistantMessage(
     role: 'assistant',
     content,
     tool_calls: options?.toolCalls,
+    citations: options?.citations,
     metadata: {
       model: options?.model,
       tokenCount: options?.tokenCount,
@@ -195,7 +199,10 @@ export async function persistMessage(
         inputTokens: options?.inputTokens,
         outputTokens: options?.outputTokens,
         toolCalls: options?.toolCalls as unknown as Record<string, unknown>[],
-        metadata: message.metadata as Record<string, unknown>,
+        metadata: {
+          ...message.metadata as Record<string, unknown>,
+          ...(message.citations && { citations: message.citations }),
+        },
       }),
       ...(message.role === 'tool' && {
         toolCallId: message.tool_call_id,
@@ -283,6 +290,7 @@ export async function streamChat(
                     routedBy: routingInfo.routedBy,
                   } : undefined,
                   ondoBotStructured: response.metadata.ondoBotStructured as OndoBotStructuredResult | undefined,
+                  citations: response.citations,
                 })
 
                 callbacks.onMessageCreated(assistantMessage)
@@ -347,6 +355,7 @@ export async function streamChat(
                     routedBy: routingInfo.routedBy,
                   } : undefined,
                   ondoBotStructured: response.metadata.ondoBotStructured as OndoBotStructuredResult | undefined,
+                  citations: response.citations,
                 })
 
                 callbacks.onMessageCreated(finalMessage)
