@@ -107,7 +107,7 @@ export function FolderItem({
       <div
         ref={setRefs}
         className={cn(
-          'group flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[13px] cursor-pointer transition-colors',
+          'group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer transition-colors',
           isSelected
             ? 'bg-secondary text-secondary-foreground'
             : 'hover:bg-muted text-muted-foreground hover:text-foreground',
@@ -120,21 +120,21 @@ export function FolderItem({
         {/* Folder icon */}
         <div className="shrink-0" style={{ color: folder.color ?? undefined }}>
           {isExpanded ? (
-            <FolderOpen className="h-3.5 w-3.5" />
+            <FolderOpen className="h-4 w-4" />
           ) : (
-            <Folder className="h-3.5 w-3.5" />
+            <Folder className="h-4 w-4" />
           )}
         </div>
 
         {/* Folder name */}
-        <span className="flex-1 truncate font-medium leading-snug">{folder.name}</span>
+        <span className="flex-1 truncate font-medium">{folder.name}</span>
 
         {/* Right side: count/chevron + hover actions */}
-        <div className="shrink-0 flex items-center">
+        <div className="shrink-0 flex items-center gap-1">
           {/* Count + expand chevron */}
           {hasChildren && (
             <button
-              className="flex items-center gap-px text-[10px] text-muted-foreground hover:text-foreground transition-colors group-hover:mr-0.5"
+              className="flex items-center gap-0.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
               onClick={(e) => {
                 e.stopPropagation()
                 onToggle()
@@ -142,9 +142,9 @@ export function FolderItem({
             >
               {!isExpanded && <span className="tabular-nums">{totalItems}</span>}
               {isExpanded ? (
-                <ChevronDown className="h-3 w-3" />
+                <ChevronDown className="h-3.5 w-3.5" />
               ) : (
-                <ChevronRight className="h-3 w-3" />
+                <ChevronRight className="h-3.5 w-3.5" />
               )}
             </button>
           )}
@@ -155,14 +155,14 @@ export function FolderItem({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-4 w-4"
+                className="h-5 w-5"
                 onClick={(e) => {
                   e.stopPropagation()
                   onNewChat(folder.id)
                 }}
                 title="New chat"
               >
-                <Plus className="h-2.5 w-2.5" />
+                <Plus className="h-3 w-3" />
               </Button>
             )}
 
@@ -171,18 +171,18 @@ export function FolderItem({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-4 w-4"
+                  className="h-5 w-5"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <MoreHorizontal className="h-3 w-3" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuContent align="end" className="w-48">
                 {onCreateSubfolder && (
                   <DropdownMenuItem
                     onClick={(e) => handleContextAction(e, () => onCreateSubfolder(folder.id))}
                   >
-                    <FolderPlus className="h-3.5 w-3.5 mr-2" />
+                    <FolderPlus className="h-4 w-4 mr-2" />
                     New Subfolder
                   </DropdownMenuItem>
                 )}
@@ -190,7 +190,7 @@ export function FolderItem({
                   <DropdownMenuItem
                     onClick={(e) => handleContextAction(e, () => onEdit(folder.id))}
                   >
-                    <Pencil className="h-3.5 w-3.5 mr-2" />
+                    <Pencil className="h-4 w-4 mr-2" />
                     Rename
                   </DropdownMenuItem>
                 )}
@@ -198,7 +198,7 @@ export function FolderItem({
                   <DropdownMenuItem
                     onClick={(e) => handleContextAction(e, () => onMove(folder.id))}
                   >
-                    <MoveRight className="h-3.5 w-3.5 mr-2" />
+                    <MoveRight className="h-4 w-4 mr-2" />
                     Move
                   </DropdownMenuItem>
                 )}
@@ -209,7 +209,7 @@ export function FolderItem({
                       className="text-destructive"
                       onClick={(e) => handleContextAction(e, () => onDelete(folder.id))}
                     >
-                      <Trash2 className="h-3.5 w-3.5 mr-2" />
+                      <Trash2 className="h-4 w-4 mr-2" />
                       Delete
                     </DropdownMenuItem>
                   </>
@@ -222,7 +222,7 @@ export function FolderItem({
 
       {/* Render children when expanded — indented with a subtle left border */}
       {isExpanded && (
-        <div className="ml-2.5 pl-1.5 border-l border-border/40">
+        <div className="ml-3 pl-2 border-l border-border/40 flex flex-col gap-0.5">
           {children}
         </div>
       )}

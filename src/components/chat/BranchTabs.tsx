@@ -41,7 +41,7 @@ function TabButton({ isActive, onClick, onClose, icon, label, tooltipText }: Tab
             type="button"
             onClick={onClick}
             className={cn(
-              'group/tab flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 transition-all',
+              'group/tab flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium border-b-2 transition-all',
               isActive
                 ? 'border-blue-600 text-blue-600 bg-blue-50 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-400'
                 : 'border-transparent text-gray-500 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-gray-100 dark:hover:bg-gray-800'
@@ -104,12 +104,12 @@ export function BranchTabs({
   }
 
   return (
-    <div className={cn('flex items-center gap-1 px-4 border-b bg-muted/30', className)}>
+    <div className={cn('flex items-center gap-0.5 px-3 border-b bg-muted/30', className)}>
       {/* Main conversation tab */}
       <TabButton
         isActive={activeBranchId === null}
         onClick={() => onBranchSelect(null)}
-        icon={<MessageSquare className="h-4 w-4" />}
+        icon={<MessageSquare className="h-3 w-3" />}
         label={truncateTitle(mainTitle)}
         tooltipText={`Main conversation: ${mainTitle}`}
       />
@@ -121,7 +121,7 @@ export function BranchTabs({
           isActive={activeBranchId === branch.id}
           onClick={() => onBranchSelect(branch.id)}
           onClose={onDeleteBranch ? () => handleCloseBranch(branch.id) : undefined}
-          icon={<GitBranch className="h-4 w-4" />}
+          icon={<GitBranch className="h-3 w-3" />}
           label={confirmingDeleteId === branch.id ? 'Delete?' : truncateTitle(branch.title)}
           tooltipText={confirmingDeleteId === branch.id ? 'Click again to delete' : branch.title}
         />
@@ -135,10 +135,10 @@ export function BranchTabs({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 ml-1"
+                className="h-6 w-6 ml-1"
                 onClick={onCreateBranch}
               >
-                <Plus className="h-4 w-4" />
+                <Plus className="h-3 w-3" />
                 <span className="sr-only">Create branch</span>
               </Button>
             </TooltipTrigger>

@@ -1,10 +1,9 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback, KeyboardEvent } from 'react'
-import { Send, Loader2 } from 'lucide-react'
+import { Send, Loader2, ArrowUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
 import { ModelSelector } from '@/components/model'
 import { ToolSelector } from './ToolSelector'
 import { ImageUpload, ImagePreviewList } from './ImageUpload'
@@ -17,9 +16,10 @@ import type { ImageAttachment, FileAttachment } from '@/types'
 
 interface ChatInputProps {
   conversationId: string
+  onHeightChange?: () => void
 }
 
-export function ChatInput({ conversationId }: ChatInputProps) {
+export function ChatInput({ conversationId, onHeightChange }: ChatInputProps) {
   const [message, setMessage] = useState('')
   const [images, setImages] = useState<ImageAttachment[]>([])
   const [files, setFiles] = useState<FileAttachment[]>([])
@@ -49,7 +49,6 @@ export function ChatInput({ conversationId }: ChatInputProps) {
   const handlePromptSelect = (content: string, promptName: string) => {
     setMessage(content)
     setActivePromptName(promptName)
-    // Focus the textarea so user can edit
     setTimeout(() => textareaRef.current?.focus(), 0)
   }
 
@@ -57,16 +56,22 @@ export function ChatInput({ conversationId }: ChatInputProps) {
     setActivePromptName(null)
   }
 
-  // Clear prompt context when user significantly edits the message
   const handleMessageChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setMessage(e.target.value)
-    // If user clears the message, clear the prompt context
     if (!e.target.value.trim()) {
       clearPromptContext()
     }
   }
 
-  // Handle paste events for images
+  // Auto-resize textarea and notify parent
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`
+    onHeightChange?.()
+  }, [message, onHeightChange])
+
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items
     if (!items) return
@@ -86,7 +91,6 @@ export function ChatInput({ conversationId }: ChatInputProps) {
 
     const content = message.trim()
 
-    // Build image attachments
     const imageAttachments = images.map((img) => ({
       id: img.id,
       type: 'image' as const,
@@ -100,7 +104,6 @@ export function ChatInput({ conversationId }: ChatInputProps) {
       detail: img.detail,
     }))
 
-    // Build file attachments
     const fileAttachments = files
       .filter((f) => f.status === 'ready')
       .map((f) => ({
@@ -123,7 +126,6 @@ export function ChatInput({ conversationId }: ChatInputProps) {
     setFiles([])
     clearPromptContext()
 
-    // Generate default content if needed
     let finalContent = content
     if (!finalContent) {
       if (images.length > 0) {
@@ -149,6 +151,7 @@ export function ChatInput({ conversationId }: ChatInputProps) {
   }
 
   const hasAttachments = images.length > 0 || files.length > 0
+  const canSend = (message.trim() || hasAttachments) && !isStreaming
 
   return (
     <FileDropZone
@@ -156,10 +159,10 @@ export function ChatInput({ conversationId }: ChatInputProps) {
       disabled={isStreaming}
       className="relative"
     >
-      <div ref={containerRef} className="space-y-3">
-        {/* Attachment previews */}
+      <div ref={containerRef} className="pb-3 pt-1">
+        {/* Attachment previews — above the input */}
         {hasAttachments && (
-          <div className="space-y-2">
+          <div className="space-y-2 mb-2">
             {images.length > 0 && (
               <ImagePreviewList
                 images={images}
@@ -176,25 +179,25 @@ export function ChatInput({ conversationId }: ChatInputProps) {
           </div>
         )}
 
-        {/* Main input container */}
-        <div className="rounded-2xl border bg-background shadow-sm focus-within:ring-1 focus-within:ring-ring overflow-hidden">
+        {/* Unified input container */}
+        <div className="rounded-xl border border-border/60 bg-muted/30 focus-within:border-border focus-within:bg-muted/50 transition-colors">
           {/* Prompt template indicator */}
           {activePromptName && (
-            <div className="flex items-center justify-between px-4 py-2 bg-primary/5 border-b">
+            <div className="flex items-center justify-between px-4 py-1.5 border-b border-border/40">
               <span className="text-xs text-muted-foreground">
-                Using template: <span className="font-medium text-foreground">{activePromptName}</span>
+                Using: <span className="font-medium text-foreground">{activePromptName}</span>
               </span>
               <button
                 onClick={clearPromptContext}
-                className="text-xs text-muted-foreground hover:text-foreground"
+                className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
               >
                 Clear
               </button>
             </div>
           )}
 
-          {/* Textarea - full width, larger */}
-          <Textarea
+          {/* Textarea — auto-growing, minimal chrome */}
+          <textarea
             ref={textareaRef}
             value={message}
             onChange={handleMessageChange}
@@ -202,16 +205,20 @@ export function ChatInput({ conversationId }: ChatInputProps) {
             onPaste={handlePaste}
             placeholder="Type your message..."
             disabled={isStreaming}
+            rows={1}
             className={cn(
-              'min-h-[120px] max-h-[300px] w-full resize-none border-0 bg-transparent p-4 text-sm focus-visible:ring-0 focus-visible:ring-offset-0',
+              'block w-full resize-none bg-transparent px-4 py-3 text-sm leading-relaxed',
+              'placeholder:text-muted-foreground/60',
+              'focus:outline-none',
+              'disabled:cursor-not-allowed disabled:opacity-50',
               isStreaming && 'opacity-50'
             )}
-            rows={4}
+            style={{ minHeight: '44px', maxHeight: '200px' }}
           />
 
-          {/* Toolbar */}
-          <div className="flex items-center justify-between border-t px-2 py-2">
-            <div className="flex items-center gap-1">
+          {/* Toolbar — seamless bottom strip */}
+          <div className="flex items-center justify-between px-2 py-1.5">
+            <div className="flex items-center gap-0.5">
               <ModelSelector
                 selectedModelId={selectedModelId}
                 onModelSelect={handleModelSelect}
@@ -220,14 +227,14 @@ export function ChatInput({ conversationId }: ChatInputProps) {
                 disabled={isStreaming}
               />
 
-              <div className="w-px h-6 bg-border mx-1" />
+              <div className="w-px h-4 bg-border/60 mx-1" />
 
               <ToolSelector
                 supportsTools={supportsTools}
                 modelName={selectedModel?.name}
               />
 
-              <div className="w-px h-6 bg-border mx-1" />
+              <div className="w-px h-4 bg-border/60 mx-1" />
 
               <ImageUpload
                 images={images}
@@ -248,31 +255,29 @@ export function ChatInput({ conversationId }: ChatInputProps) {
             </div>
 
             <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground hidden sm:block">
+              <span className="text-[11px] text-muted-foreground/60 hidden sm:block">
                 {preferences.sendWithEnter ? (
-                  <>
-                    <kbd className="rounded border px-1 py-0.5 text-[10px]">Enter</kbd> to send
-                  </>
+                  <kbd className="font-mono">Enter</kbd>
                 ) : (
-                  <>
-                    <kbd className="rounded border px-1 py-0.5 text-[10px]">⌘↵</kbd> to send
-                  </>
+                  <kbd className="font-mono">⌘↵</kbd>
                 )}
               </span>
 
               <Button
-                size="sm"
-                className="h-8 px-4 rounded-lg"
+                size="icon"
+                className={cn(
+                  'h-7 w-7 rounded-lg transition-colors',
+                  canSend
+                    ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                    : 'bg-muted text-muted-foreground'
+                )}
                 onClick={handleSubmit}
-                disabled={(!message.trim() && !hasAttachments) || isStreaming}
+                disabled={!canSend}
               >
                 {isStreaming ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
-                  <>
-                    <Send className="h-4 w-4 mr-2" />
-                    Send
-                  </>
+                  <ArrowUp className="h-3.5 w-3.5" />
                 )}
               </Button>
             </div>

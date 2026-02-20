@@ -137,7 +137,7 @@ export function ConversationItem({
       <div
         ref={setNodeRef}
         className={cn(
-          'group flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[13px] cursor-pointer transition-colors',
+          'group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer transition-colors',
           isSelected
             ? 'bg-secondary text-secondary-foreground'
             : 'hover:bg-muted text-muted-foreground hover:text-foreground',
@@ -152,9 +152,9 @@ export function ConversationItem({
         {/* Icon */}
         <div className="shrink-0">
           {isBranch && showBranchIndicator ? (
-            <GitBranch className="h-3 w-3" />
+            <GitBranch className="h-3.5 w-3.5" />
           ) : (
-            <MessageSquare className="h-3 w-3" />
+            <MessageSquare className="h-3.5 w-3.5" />
           )}
         </div>
 
@@ -169,7 +169,7 @@ export function ConversationItem({
               onBlur={handleConfirmEdit}
               onKeyDown={handleKeyDown}
               onClick={(e) => e.stopPropagation()}
-              className="w-full bg-background border border-input rounded px-1.5 py-0.5 text-[13px] outline-none focus:ring-1 focus:ring-primary"
+              className="w-full bg-background border border-input rounded px-1.5 py-0.5 text-sm outline-none focus:ring-1 focus:ring-primary"
             />
           ) : (
             <span className="truncate block leading-snug">
@@ -182,23 +182,23 @@ export function ConversationItem({
         </div>
 
         {/* Right side: branch badge + hover menu */}
-        <div className="shrink-0 flex items-center">
+        <div className="shrink-0 flex items-center gap-1">
           {/* Branch count badge */}
           {hasBranches && (
             <button
-              className="flex items-center gap-px text-[10px] text-muted-foreground hover:text-foreground transition-colors group-hover:mr-0.5"
+              className="flex items-center gap-0.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
               onClick={(e) => {
                 e.stopPropagation()
                 setIsBranchesExpanded(!isBranchesExpanded)
               }}
               title={isBranchesExpanded ? 'Collapse branches' : 'Expand branches'}
             >
-              <GitBranch className="h-2.5 w-2.5" />
+              <GitBranch className="h-3 w-3" />
               <span className="tabular-nums">{branches!.length}</span>
               {isBranchesExpanded ? (
-                <ChevronDown className="h-2.5 w-2.5" />
+                <ChevronDown className="h-3 w-3" />
               ) : (
-                <ChevronRight className="h-2.5 w-2.5" />
+                <ChevronRight className="h-3 w-3" />
               )}
             </button>
           )}
@@ -210,7 +210,7 @@ export function ConversationItem({
                 variant="ghost"
                 size="icon"
                 className={cn(
-                  'h-4 w-4 shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity',
+                  'h-5 w-5 shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity',
                   isSelected && 'opacity-70'
                 )}
                 onClick={(e) => e.stopPropagation()}
@@ -218,17 +218,17 @@ export function ConversationItem({
                 <MoreHorizontal className="h-3 w-3" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuContent align="end" className="w-48">
               {onPin && (
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onPin() }}>
                   {conversation.pinned ? (
                     <>
-                      <PinOff className="h-3.5 w-3.5 mr-2" />
+                      <PinOff className="h-4 w-4 mr-2" />
                       Unpin
                     </>
                   ) : (
                     <>
-                      <Pin className="h-3.5 w-3.5 mr-2" />
+                      <Pin className="h-4 w-4 mr-2" />
                       Pin
                     </>
                   )}
@@ -236,13 +236,13 @@ export function ConversationItem({
               )}
               {onRename && (
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleStartEdit() }}>
-                  <Pencil className="h-3.5 w-3.5 mr-2" />
+                  <Pencil className="h-4 w-4 mr-2" />
                   Rename
                 </DropdownMenuItem>
               )}
               {onMove && (
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onMove() }}>
-                  <MoveRight className="h-3.5 w-3.5 mr-2" />
+                  <MoveRight className="h-4 w-4 mr-2" />
                   Move
                 </DropdownMenuItem>
               )}
@@ -253,7 +253,7 @@ export function ConversationItem({
                     className="text-destructive"
                     onClick={(e) => { e.stopPropagation(); onDelete() }}
                   >
-                    <Trash2 className="h-3.5 w-3.5 mr-2" />
+                    <Trash2 className="h-4 w-4 mr-2" />
                     Delete
                   </DropdownMenuItem>
                 </>
@@ -265,7 +265,7 @@ export function ConversationItem({
 
       {/* Expanded branches — indented with left border */}
       {hasBranches && isBranchesExpanded && (
-        <div className="ml-2.5 pl-1.5 border-l border-border/40">
+        <div className="ml-3 pl-2 border-l border-border/40 flex flex-col gap-0.5">
           {branches!.map((branch) => (
             <ConversationItem
               key={branch.id}

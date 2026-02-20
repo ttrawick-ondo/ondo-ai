@@ -19,7 +19,7 @@ export function MessageList({ messages, streamingMessage, onBranch }: MessageLis
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-5">
       {messages.map((message) => (
         <MessageBubble
           key={message.id}

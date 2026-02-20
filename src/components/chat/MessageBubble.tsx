@@ -80,199 +80,188 @@ export function MessageBubble({ message, isStreaming, onBranch }: MessageBubbleP
   if (isTool) {
     const execution = message.tool_executions?.[0]
     return (
-      <div className="flex gap-4 pl-12">
-        <div className="flex-1 max-w-[85%]">
-          <ToolResultDisplay
-            toolCallId={message.tool_call_id || ''}
-            execution={execution}
-          />
-        </div>
+      <div className="ml-9">
+        <ToolResultDisplay
+          toolCallId={message.tool_call_id || ''}
+          execution={execution}
+        />
       </div>
     )
   }
 
-  return (
-    <div
-      className={cn(
-        'group flex gap-4',
-        isUser ? 'flex-row-reverse' : 'flex-row'
-      )}
-    >
-      <Avatar className="h-8 w-8 shrink-0">
-        {isUser ? (
-          <>
-            <AvatarImage src={user?.avatarUrl} />
-            <AvatarFallback>
-              <User className="h-4 w-4" />
-            </AvatarFallback>
-          </>
-        ) : (
-          <AvatarFallback className="bg-primary text-primary-foreground">
-            <Bot className="h-4 w-4" />
-          </AvatarFallback>
-        )}
-      </Avatar>
+  // ── User message ──────────────────────────────────────────────
+  if (isUser) {
+    return (
+      <div className="group flex gap-3 justify-end">
+        <div className="flex flex-col items-end max-w-[75%]">
+          <div className="rounded-2xl rounded-br-sm bg-primary text-primary-foreground px-4 py-2.5">
+            {imageAttachments.length > 0 && (
+              <div className={cn(
+                'grid gap-2 mb-2',
+                imageAttachments.length === 1 ? 'grid-cols-1' : 'grid-cols-2'
+              )}>
+                {imageAttachments.map((img) => (
+                  <img
+                    key={img.id}
+                    src={img.url}
+                    alt={img.name}
+                    className="rounded-lg max-w-[250px] max-h-[250px] object-cover"
+                  />
+                ))}
+              </div>
+            )}
+            {fileAttachments.length > 0 && (
+              <div className="mb-2">
+                <FilePreviewList files={fileAttachments} showContent />
+              </div>
+            )}
+            {message.content && (
+              <p className="whitespace-pre-wrap text-[14px] leading-relaxed">{message.content}</p>
+            )}
+          </div>
 
-      <div
-        className={cn(
-          'flex flex-col gap-1 max-w-[85%]',
-          isUser ? 'items-end' : 'items-start'
-        )}
-      >
-        <div
-          ref={!isUser ? contentRef : undefined}
-          className={cn(
-            'relative rounded-2xl px-4 py-2.5',
-            isUser
-              ? 'bg-primary text-primary-foreground rounded-br-md'
-              : 'bg-muted rounded-bl-md'
-          )}
-        >
-          {/* Selection tooltip for assistant messages */}
-          {!isUser && onBranch && !isStreaming && (
+          {/* Hover actions */}
+          <div className="flex items-center gap-0.5 mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleCopy}>
+                    {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">{copied ? 'Copied!' : 'Copy'}</TooltipContent>
+              </Tooltip>
+
+              {!isStreaming && onBranch && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onBranch(message.id)}>
+                      <GitBranch className="h-3 w-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Branch from here</TooltipContent>
+                </Tooltip>
+              )}
+            </TooltipProvider>
+          </div>
+        </div>
+
+        <Avatar className="h-7 w-7 shrink-0 mt-1">
+          <AvatarImage src={user?.avatarUrl} />
+          <AvatarFallback>
+            <User className="h-3.5 w-3.5" />
+          </AvatarFallback>
+        </Avatar>
+      </div>
+    )
+  }
+
+  // ── Assistant message ─────────────────────────────────────────
+  return (
+    <div className="group flex gap-3">
+      {/* Icon — no avatar ring, just a subtle circle */}
+      <div className="mt-0.5 shrink-0 h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center">
+        <Bot className="h-3.5 w-3.5 text-primary" />
+      </div>
+
+      <div className="flex-1 min-w-0">
+        {/* Content — no bubble, just flowing prose */}
+        <div ref={contentRef} className="relative text-[14px] leading-relaxed">
+          {/* Selection tooltip */}
+          {onBranch && !isStreaming && (
             <SelectionTooltip
               containerRef={contentRef}
               onAskAboutThis={handleAskAboutThis}
             />
           )}
-          {isUser ? (
-            <>
-              {imageAttachments.length > 0 && (
-                <div className={cn(
-                  'grid gap-2 mb-2',
-                  imageAttachments.length === 1 ? 'grid-cols-1' : 'grid-cols-2'
-                )}>
-                  {imageAttachments.map((img) => (
-                    <img
-                      key={img.id}
-                      src={img.url}
-                      alt={img.name}
-                      className="rounded-lg max-w-[250px] max-h-[250px] object-cover"
-                    />
-                  ))}
-                </div>
-              )}
-              {fileAttachments.length > 0 && (
-                <div className="mb-2">
-                  <FilePreviewList files={fileAttachments} showContent />
-                </div>
-              )}
-              {message.content && (
-                <p className="whitespace-pre-wrap text-sm">{message.content}</p>
-              )}
-            </>
-          ) : (
-            <>
-              {/* Check for OndoBot structured data for rich rendering */}
-              {message.metadata?.ondoBotStructured &&
-               isOndoBotStructuredResult(message.metadata.ondoBotStructured) ? (
-                <OndoBotResults
-                  structured={message.metadata.ondoBotStructured}
-                  className="min-w-[320px]"
-                />
-              ) : message.content && (
-                message.citations && message.citations.length > 0 ? (
-                  <ContentWithCitations
-                    content={message.content}
-                    citations={message.citations}
-                  />
-                ) : (
-                  <MarkdownRenderer content={message.content} />
-                )
-              )}
-              {hasToolCalls && (
-                <ToolCallDisplay
-                  toolCalls={message.tool_calls!}
-                  executions={message.tool_executions}
-                  isExecuting={isExecutingTools}
-                />
-              )}
-            </>
+
+          {/* Check for OndoBot structured data for rich rendering */}
+          {message.metadata?.ondoBotStructured &&
+           isOndoBotStructuredResult(message.metadata.ondoBotStructured) ? (
+            <OndoBotResults
+              structured={message.metadata.ondoBotStructured}
+              className="min-w-[320px]"
+            />
+          ) : message.content && (
+            message.citations && message.citations.length > 0 ? (
+              <ContentWithCitations
+                content={message.content}
+                citations={message.citations}
+              />
+            ) : (
+              <MarkdownRenderer content={message.content} />
+            )
+          )}
+          {hasToolCalls && (
+            <ToolCallDisplay
+              toolCalls={message.tool_calls!}
+              executions={message.tool_executions}
+              isExecuting={isExecutingTools}
+            />
           )}
           {isStreaming && (
-            <span className="inline-block w-2 h-4 ml-1 bg-current animate-pulse" />
+            <span className="inline-block w-1.5 h-4 ml-0.5 bg-primary/60 animate-pulse rounded-sm" />
           )}
         </div>
 
-        {/* Model/Routing Badge for assistant messages */}
-        {!isUser && modelId && (
-          <div className="flex items-center gap-2">
+        {/* Footer: model badge + hover actions on same line */}
+        <div className="flex items-center gap-1.5 mt-1.5">
+          {modelId && (
             <ModelBadge
               modelId={modelId}
               modelName={model?.name || modelId}
               provider={provider}
             />
-            {showRoutingIndicator && routingInfo?.wasAutoRouted && (
-              <RoutingIndicator
-                provider={provider}
-                intent={routingInfo.intent as RequestIntent | undefined}
-                wasAutoRouted={routingInfo.wasAutoRouted}
-                confidence={routingInfo.confidence}
-                size="sm"
-              />
-            )}
-          </div>
-        )}
-
-        {/* Actions */}
-        <div
-          className={cn(
-            'flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100',
-            isUser ? 'flex-row-reverse' : 'flex-row'
           )}
-        >
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={handleCopy}
-                >
-                  {copied ? (
-                    <Check className="h-3.5 w-3.5 text-green-500" />
-                  ) : (
-                    <Copy className="h-3.5 w-3.5" />
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">
-                {copied ? 'Copied!' : 'Copy'}
-              </TooltipContent>
-            </Tooltip>
+          {showRoutingIndicator && routingInfo?.wasAutoRouted && (
+            <RoutingIndicator
+              provider={provider}
+              intent={routingInfo.intent as RequestIntent | undefined}
+              wasAutoRouted={routingInfo.wasAutoRouted}
+              confidence={routingInfo.confidence}
+              size="sm"
+            />
+          )}
 
-            {!isUser && !isStreaming && message.content && (
-              <ReadAloudButton text={message.content} />
-            )}
-
-            {!isUser && !isStreaming && (
+          {/* Hover actions — inline with badge */}
+          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-7 w-7">
-                    <RotateCcw className="h-3.5 w-3.5" />
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleCopy}>
+                    {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom">Regenerate</TooltipContent>
+                <TooltipContent side="bottom">{copied ? 'Copied!' : 'Copy'}</TooltipContent>
               </Tooltip>
-            )}
 
-            {!isStreaming && onBranch && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={() => onBranch(message.id)}
-                  >
-                    <GitBranch className="h-3.5 w-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">Branch from here</TooltipContent>
-              </Tooltip>
-            )}
-          </TooltipProvider>
+              {!isStreaming && message.content && (
+                <ReadAloudButton text={message.content} />
+              )}
+
+              {!isStreaming && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-6 w-6">
+                      <RotateCcw className="h-3 w-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Regenerate</TooltipContent>
+                </Tooltip>
+              )}
+
+              {!isStreaming && onBranch && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onBranch(message.id)}>
+                      <GitBranch className="h-3 w-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Branch from here</TooltipContent>
+                </Tooltip>
+              )}
+            </TooltipProvider>
+          </div>
         </div>
       </div>
     </div>

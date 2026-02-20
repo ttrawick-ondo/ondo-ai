@@ -22,7 +22,7 @@ export function ModelBadge({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground',
+        'inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-[11px] text-muted-foreground',
         className
       )}
     >

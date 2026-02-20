@@ -61,6 +61,13 @@ export function ChatContainer({ conversationId, initialBranchId = null }: ChatCo
     }
   }, [messages, streamingMessage])
 
+  // Scroll to bottom when input area resizes (textarea grows)
+  const handleInputHeightChange = useCallback(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    }
+  }, [])
+
   // Handle branching from a message - switch to new branch tab instead of navigating
   const handleBranch = useCallback(
     async (messageId: string) => {
@@ -114,7 +121,7 @@ export function ChatContainer({ conversationId, initialBranchId = null }: ChatCo
       )}
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-thin">
-        <div className="mx-auto max-w-3xl px-4 py-6">
+        <div className="mx-auto max-w-4xl px-4 pt-4 pb-6">
           <MessageList
             messages={messages}
             streamingMessage={isStreaming ? streamingMessage : undefined}
@@ -123,10 +130,8 @@ export function ChatContainer({ conversationId, initialBranchId = null }: ChatCo
           {isStreaming && !streamingMessage && <TypingIndicator />}
         </div>
       </div>
-      <div className="border-t bg-background p-4">
-        <div className="mx-auto max-w-3xl">
-          <ChatInput conversationId={displayConversationId} />
-        </div>
+      <div className="shrink-0 mx-auto w-full max-w-4xl px-4">
+        <ChatInput conversationId={displayConversationId} onHeightChange={handleInputHeightChange} />
       </div>
     </div>
   )
