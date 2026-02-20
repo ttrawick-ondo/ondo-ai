@@ -18,7 +18,9 @@ export class GleanSearchService {
 
   constructor(config?: GleanServiceConfig) {
     this.apiKey = config?.apiKey || process.env.GLEAN_API_KEY || ''
-    this.apiUrl = config?.apiUrl || process.env.GLEAN_API_URL || 'https://api.glean.com/api/v1'
+    const url = config?.apiUrl || process.env.GLEAN_API_URL || 'https://api.glean.com/rest/api/v1'
+    // Normalize: strip trailing slash to avoid double-slash in URL construction
+    this.apiUrl = url.replace(/\/+$/, '')
   }
 
   private getHeaders(): Record<string, string> {

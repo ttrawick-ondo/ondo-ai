@@ -19,7 +19,7 @@ const serverEnvSchema = z.object({
 
   // Glean
   GLEAN_API_KEY: z.string().optional(),
-  GLEAN_API_URL: z.string().url().optional().default('https://api.glean.com/api/v1'),
+  GLEAN_API_URL: z.string().url().optional().default('https://api.glean.com/rest/api/v1'),
 
   // External Services
   TAVILY_API_KEY: z.string().optional(),

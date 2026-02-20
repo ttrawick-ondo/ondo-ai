@@ -68,7 +68,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Call Glean API with draft agent config
-    const gleanResponse = await fetch(`${apiUrl}/chat`, {
+    const baseUrl = apiUrl.replace(/\/+$/, '')
+    const gleanResponse = await fetch(`${baseUrl}/chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
