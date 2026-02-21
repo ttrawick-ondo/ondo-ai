@@ -23,24 +23,28 @@ export class GleanSearchService {
     this.apiUrl = url.replace(/\/+$/, '')
   }
 
-  private getHeaders(): Record<string, string> {
-    return {
+  private getHeaders(userEmail?: string): Record<string, string> {
+    const headers: Record<string, string> = {
       'Authorization': `Bearer ${this.apiKey}`,
       'Content-Type': 'application/json',
     }
+    if (userEmail) {
+      headers['X-Scio-Actas'] = userEmail
+    }
+    return headers
   }
 
   /**
    * Search Glean knowledge base
    */
-  async search(request: GleanSearchRequest): Promise<GleanSearchResponse> {
+  async search(request: GleanSearchRequest, userEmail?: string): Promise<GleanSearchResponse> {
     if (!this.apiKey) {
       throw new Error('Glean API key is not configured')
     }
 
     const response = await fetch(`${this.apiUrl}/search`, {
       method: 'POST',
-      headers: this.getHeaders(),
+      headers: this.getHeaders(userEmail),
       body: JSON.stringify({
         query: request.query,
         pageSize: request.pageSize || 10,
@@ -65,6 +69,7 @@ export class GleanSearchService {
     options?: {
       datasource?: string
       maxResults?: number
+      userEmail?: string
     }
   ): Promise<{ citations: GleanCitation[]; totalCount: number }> {
     const searchRequest: GleanSearchRequest = {
@@ -78,7 +83,7 @@ export class GleanSearchService {
       }
     }
 
-    const response = await this.search(searchRequest)
+    const response = await this.search(searchRequest, options?.userEmail)
 
     const citations = response.results.map((result) =>
       this.resultToCitation(result)
@@ -141,13 +146,13 @@ export class GleanSearchService {
   /**
    * List available data sources
    */
-  async listDataSources(): Promise<Array<{ id: string; name: string; type: string }>> {
+  async listDataSources(userEmail?: string): Promise<Array<{ id: string; name: string; type: string }>> {
     if (!this.apiKey) {
       throw new Error('Glean API key is not configured')
     }
 
     const response = await fetch(`${this.apiUrl}/datasources`, {
-      headers: this.getHeaders(),
+      headers: this.getHeaders(userEmail),
     })
 
     if (!response.ok) {

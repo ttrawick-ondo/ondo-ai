@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const result = await gleanProvider.searchAgents({ query, pageSize, cursor })
+    const result = await gleanProvider.searchAgents({ query, pageSize, cursor }, session.user.email || undefined)
 
     return NextResponse.json({
       agents: result.agents,

@@ -94,6 +94,7 @@ export async function handleKnowledgeQuery(
     const searchResponse = await searchService.searchWithCitations(query, {
       maxResults: maxSearchResults,
       datasource: datasourceFilter,
+      userEmail: request.userEmail,
     })
 
     if (searchResponse.citations.length > 0) {
@@ -159,6 +160,7 @@ export async function* streamKnowledgeQuery(
     const searchResponse = await searchService.searchWithCitations(query, {
       maxResults: maxSearchResults,
       datasource: datasourceFilter,
+      userEmail: request.userEmail,
     })
 
     if (searchResponse.citations.length > 0) {

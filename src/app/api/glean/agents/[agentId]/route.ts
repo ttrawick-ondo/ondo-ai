@@ -30,7 +30,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       )
     }
 
-    const agent = await gleanProvider.getAgent(agentId)
+    const agent = await gleanProvider.getAgent(agentId, session.user.email || undefined)
 
     return NextResponse.json({ agent })
   } catch (error) {

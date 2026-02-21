@@ -20,6 +20,7 @@ export async function POST(request: NextRequest) {
     const result = await searchService.searchWithCitations(body.query, {
       datasource: body.datasource,
       maxResults: body.maxResults || 10,
+      userEmail: session.user.email || undefined,
     })
 
     return NextResponse.json({
@@ -42,7 +43,7 @@ export async function GET() {
     if (!session) return unauthorizedResponse()
 
     const searchService = getGleanSearchService()
-    const dataSources = await searchService.listDataSources()
+    const dataSources = await searchService.listDataSources(session.user.email || undefined)
 
     return NextResponse.json({
       success: true,

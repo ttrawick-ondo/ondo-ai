@@ -36,6 +36,7 @@ export async function POST(request: NextRequest) {
       messages: body.messages,
       provider: body.provider,
       model: body.model,
+      userEmail: session.user.email || undefined,
       options: {
         temperature: body.options?.temperature,
         maxTokens: body.options?.maxTokens,

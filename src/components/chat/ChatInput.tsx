@@ -204,14 +204,11 @@ export function ChatInput({ conversationId, onHeightChange }: ChatInputProps) {
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder="Type your message..."
-            disabled={isStreaming}
             rows={1}
             className={cn(
               'block w-full resize-none bg-transparent px-4 py-3 text-sm leading-relaxed',
               'placeholder:text-muted-foreground/60',
               'focus:outline-none',
-              'disabled:cursor-not-allowed disabled:opacity-50',
-              isStreaming && 'opacity-50'
             )}
             style={{ minHeight: '44px', maxHeight: '200px' }}
           />

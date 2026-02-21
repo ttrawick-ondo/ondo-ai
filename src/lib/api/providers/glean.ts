@@ -80,11 +80,15 @@ export class GleanProvider extends BaseProvider {
     }
   }
 
-  private getHeaders(): Record<string, string> {
-    return {
+  private getHeaders(userEmail?: string): Record<string, string> {
+    const headers: Record<string, string> = {
       Authorization: `Bearer ${this.getApiKey()}`,
       'Content-Type': 'application/json',
     }
+    if (userEmail) {
+      headers['X-Scio-Actas'] = userEmail
+    }
+    return headers
   }
 
   /**
@@ -205,7 +209,7 @@ export class GleanProvider extends BaseProvider {
 
       const response = await fetch(`${this.getBaseUrl()}/chat`, {
         method: 'POST',
-        headers: this.getHeaders(),
+        headers: this.getHeaders(request.userEmail),
         body: JSON.stringify(gleanRequest),
       })
 
@@ -285,7 +289,7 @@ export class GleanProvider extends BaseProvider {
 
       const response = await fetch(`${this.getBaseUrl()}/chat`, {
         method: 'POST',
-        headers: this.getHeaders(),
+        headers: this.getHeaders(request.userEmail),
         body: JSON.stringify(gleanRequest),
       })
 
@@ -404,13 +408,13 @@ export class GleanProvider extends BaseProvider {
    * Search for agents by name
    * Uses POST /rest/api/v1/agents/search
    */
-  async searchAgents(request?: GleanAgentSearchRequest): Promise<GleanAgentSearchResponse> {
+  async searchAgents(request?: GleanAgentSearchRequest, userEmail?: string): Promise<GleanAgentSearchResponse> {
     try {
       const response = await fetch(
         `${this.getBaseUrl()}/agents/search`,
         {
           method: 'POST',
-          headers: this.getHeaders(),
+          headers: this.getHeaders(userEmail),
           body: JSON.stringify({
             query: request?.query || '',
             pageSize: request?.pageSize || 20,
@@ -434,12 +438,12 @@ export class GleanProvider extends BaseProvider {
    * Get agent metadata (read-only)
    * Uses GET /rest/api/v1/agents/{agent_id}
    */
-  async getAgent(agentId: string): Promise<GleanAgent> {
+  async getAgent(agentId: string, userEmail?: string): Promise<GleanAgent> {
     try {
       const response = await fetch(
         `${this.getBaseUrl()}/agents/${agentId}`,
         {
-          headers: this.getHeaders(),
+          headers: this.getHeaders(userEmail),
         }
       )
 
@@ -458,12 +462,12 @@ export class GleanProvider extends BaseProvider {
    * Get agent input/output schemas
    * Uses GET /rest/api/v1/agents/{agent_id}/schemas
    */
-  async getAgentSchemas(agentId: string): Promise<GleanAgentSchema> {
+  async getAgentSchemas(agentId: string, userEmail?: string): Promise<GleanAgentSchema> {
     try {
       const response = await fetch(
         `${this.getBaseUrl()}/agents/${agentId}/schemas`,
         {
-          headers: this.getHeaders(),
+          headers: this.getHeaders(userEmail),
         }
       )
 
@@ -482,13 +486,13 @@ export class GleanProvider extends BaseProvider {
    * Execute an agent (blocking mode)
    * Uses POST /rest/api/v1/agents/runs/wait
    */
-  async runAgentBlocking(request: GleanAgentRunRequest): Promise<GleanAgentRunResponse> {
+  async runAgentBlocking(request: GleanAgentRunRequest, userEmail?: string): Promise<GleanAgentRunResponse> {
     try {
       const response = await fetch(
         `${this.getBaseUrl()}/agents/runs/wait`,
         {
           method: 'POST',
-          headers: this.getHeaders(),
+          headers: this.getHeaders(userEmail),
           body: JSON.stringify(request),
         }
       )
@@ -510,7 +514,8 @@ export class GleanProvider extends BaseProvider {
    * Returns an async generator that yields stream events
    */
   async *runAgentStream(
-    request: GleanAgentRunRequest
+    request: GleanAgentRunRequest,
+    userEmail?: string,
   ): AsyncGenerator<{ type: string; content?: string; citations?: GleanCitation[]; error?: string }> {
     try {
       const response = await fetch(
@@ -518,7 +523,7 @@ export class GleanProvider extends BaseProvider {
         {
           method: 'POST',
           headers: {
-            ...this.getHeaders(),
+            ...this.getHeaders(userEmail),
             Accept: 'text/event-stream',
           },
           body: JSON.stringify(request),
@@ -571,10 +576,10 @@ export class GleanProvider extends BaseProvider {
    * List available data sources
    * Uses GET /api/v1/datasources (standard Glean API)
    */
-  async listDataSources(): Promise<GleanDataSource[]> {
+  async listDataSources(userEmail?: string): Promise<GleanDataSource[]> {
     try {
       const response = await fetch(`${this.getBaseUrl()}/datasources`, {
-        headers: this.getHeaders(),
+        headers: this.getHeaders(userEmail),
       })
 
       if (!response.ok) {

@@ -9,6 +9,8 @@ export interface ChatCompletionRequest {
   provider: AIProvider
   model: string
   options?: ChatCompletionOptions
+  /** Email of the authenticated user — used by Glean for ACL-scoped requests (X-Scio-Actas) */
+  userEmail?: string
 }
 
 export interface ChatCompletionMessage {
