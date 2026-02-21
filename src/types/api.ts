@@ -103,6 +103,8 @@ export interface StreamEventData {
   }
   // Citations (e.g. from Glean responses)
   citations?: Citation[]
+  // Thinking/reasoning text (e.g. from Glean UPDATE messages)
+  thinking?: string
 }
 
 // Provider list response
@@ -123,6 +125,7 @@ export interface ProviderInfo {
 export interface StreamCallbacks {
   onStart?: () => void
   onDelta?: (delta: string) => void
+  onThinkingDelta?: (thinking: string) => void
   onToolCallDelta?: (delta: StreamEventData['tool_call_delta']) => void
   onDone?: (response: ChatCompletionResponse) => void
   onError?: (error: string) => void

@@ -185,8 +185,8 @@ export class ChatClient {
     routingOptions?: RoutingOptions
   ): Promise<void> {
     const {
-      timeout = 120000, // 2 minutes default
-      chunkTimeout = 30000, // 30 seconds between chunks
+      timeout = 180000, // 3 minutes default
+      chunkTimeout = 60000, // 60 seconds between chunks (Glean RAG can be slow to first byte)
     } = options
 
     const mergedRoutingOptions = { ...this.routingOptions, ...routingOptions }
@@ -205,14 +205,14 @@ export class ChatClient {
       if (chunkTimeoutId) clearTimeout(chunkTimeoutId)
       chunkTimeoutId = setTimeout(() => {
         controller.abort()
-        callbacks.onError?.('Stream chunk timeout - no data received for 30 seconds')
+        callbacks.onError?.(`Stream chunk timeout - no data received for ${chunkTimeout / 1000} seconds`)
       }, chunkTimeout)
     }
 
     // Set overall timeout
     overallTimeoutId = setTimeout(() => {
       controller.abort()
-      callbacks.onError?.('Stream timeout - overall request exceeded 2 minutes')
+      callbacks.onError?.(`Stream timeout - overall request exceeded ${timeout / 1000} seconds`)
     }, timeout)
 
     try {
@@ -302,6 +302,9 @@ export class ChatClient {
                 if (event.data.delta) {
                   callbacks.onDelta?.(event.data.delta)
                 }
+                if (event.data.thinking) {
+                  callbacks.onThinkingDelta?.(event.data.thinking)
+                }
                 if (event.data.tool_call_delta) {
                   callbacks.onToolCallDelta?.(event.data.tool_call_delta)
                 }
@@ -345,9 +348,9 @@ export class ChatClient {
 }
 
 export interface StreamOptions {
-  /** Overall timeout in ms (default: 120000 = 2 minutes) */
+  /** Overall timeout in ms (default: 180000 = 3 minutes) */
   timeout?: number
-  /** Timeout between chunks in ms (default: 30000 = 30 seconds) */
+  /** Timeout between chunks in ms (default: 60000 = 60 seconds) */
   chunkTimeout?: number
 }
 

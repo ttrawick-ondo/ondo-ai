@@ -32,13 +32,22 @@ export function createDoneEvent(
   content: string,
   usage: TokenUsage,
   metadata: ChatCompletionMetadata,
-  citations?: Citation[]
+  citations?: Citation[],
+  thinking?: string
 ): StreamEvent {
-  return createStreamEvent('done', { content, usage, metadata, ...(citations && { citations }) })
+  return createStreamEvent('done', {
+    content, usage, metadata,
+    ...(citations && { citations }),
+    ...(thinking && { thinking }),
+  })
 }
 
 export function createErrorEvent(error: string): StreamEvent {
   return createStreamEvent('error', { error })
+}
+
+export function createThinkingDeltaEvent(thinking: string): StreamEvent {
+  return createStreamEvent('delta', { thinking })
 }
 
 export function createToolCallDeltaEvent(

@@ -37,6 +37,7 @@ interface ChatState {
   messagesByConversation: Record<string, Message[]>
   isStreaming: boolean
   streamingMessage: string
+  streamingThinking: string
   isLoading: boolean
   isSyncing: boolean
   isInitialized: boolean
@@ -84,6 +85,7 @@ export const useChatStore = create<ChatStore>()(
         messagesByConversation: {},
         isStreaming: false,
         streamingMessage: '',
+        streamingThinking: '',
         isLoading: false,
         isSyncing: false,
         isInitialized: false,
@@ -346,7 +348,7 @@ export const useChatStore = create<ChatStore>()(
             }
 
             // Start streaming
-            set({ isStreaming: true, streamingMessage: '' })
+            set({ isStreaming: true, streamingMessage: '', streamingThinking: '' })
 
             // Build API messages
             const existingMessages = messagesByConversation[targetConversationId] || []
@@ -369,13 +371,16 @@ export const useChatStore = create<ChatStore>()(
               },
               {
                 onStreamStart: () => {
-                  set({ streamingMessage: '' })
+                  set({ streamingMessage: '', streamingThinking: '' })
                 },
                 onStreamDelta: (_delta, fullContent) => {
                   set({ streamingMessage: fullContent })
                 },
+                onThinkingDelta: (_delta, fullThinking) => {
+                  set({ streamingThinking: fullThinking })
+                },
                 onStreamComplete: () => {
-                  set({ isStreaming: false, streamingMessage: '' })
+                  set({ isStreaming: false, streamingMessage: '', streamingThinking: '' })
                 },
                 onMessageCreated: (message) => {
                   set((state) => ({
@@ -444,6 +449,7 @@ export const useChatStore = create<ChatStore>()(
                     },
                     isStreaming: false,
                     streamingMessage: '',
+                    streamingThinking: '',
                   }))
                 },
               }
@@ -880,6 +886,8 @@ export const useMessages = (conversationId: string) =>
 export const useIsStreaming = () => useChatStore((state) => state.isStreaming)
 
 export const useStreamingMessage = () => useChatStore((state) => state.streamingMessage)
+
+export const useStreamingThinking = () => useChatStore((state) => state.streamingThinking)
 
 export const useEnabledTools = () => useChatStore((state) => state.enabledTools)
 

@@ -6,11 +6,12 @@ import type { Message } from '@/types'
 interface MessageListProps {
   messages: Message[]
   streamingMessage?: string
+  streamingThinking?: string
   onBranch?: (messageId: string) => void
 }
 
-export function MessageList({ messages, streamingMessage, onBranch }: MessageListProps) {
-  if (messages.length === 0 && !streamingMessage) {
+export function MessageList({ messages, streamingMessage, streamingThinking, onBranch }: MessageListProps) {
+  if (messages.length === 0 && !streamingMessage && !streamingThinking) {
     return (
       <div className="flex h-full items-center justify-center text-muted-foreground">
         Start the conversation by typing a message below.
@@ -27,13 +28,13 @@ export function MessageList({ messages, streamingMessage, onBranch }: MessageLis
           onBranch={onBranch}
         />
       ))}
-      {streamingMessage && (
+      {(streamingMessage || streamingThinking) && (
         <MessageBubble
           message={{
             id: 'streaming',
             conversationId: '',
             role: 'assistant',
-            content: streamingMessage,
+            content: streamingMessage || '',
             createdAt: new Date(),
           }}
           isStreaming

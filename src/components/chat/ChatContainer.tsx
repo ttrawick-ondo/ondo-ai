@@ -10,6 +10,7 @@ import {
   useMessages,
   useIsStreaming,
   useStreamingMessage,
+  useStreamingThinking,
   useChatActions,
   useChatStore,
   useConversationBranches,
@@ -44,6 +45,7 @@ export function ChatContainer({ conversationId, initialBranchId = null }: ChatCo
   const messages = useMessages(displayConversationId)
   const isStreaming = useIsStreaming()
   const streamingMessage = useStreamingMessage()
+  const streamingThinking = useStreamingThinking()
   const { branchConversation, deleteConversation, loadConversationMessages } = useChatActions()
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -59,7 +61,7 @@ export function ChatContainer({ conversationId, initialBranchId = null }: ChatCo
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
-  }, [messages, streamingMessage])
+  }, [messages, streamingMessage, streamingThinking])
 
   // Scroll to bottom when input area resizes (textarea grows)
   const handleInputHeightChange = useCallback(() => {
@@ -125,9 +127,10 @@ export function ChatContainer({ conversationId, initialBranchId = null }: ChatCo
           <MessageList
             messages={messages}
             streamingMessage={isStreaming ? streamingMessage : undefined}
+            streamingThinking={isStreaming ? streamingThinking : undefined}
             onBranch={handleBranch}
           />
-          {isStreaming && !streamingMessage && <TypingIndicator />}
+          {isStreaming && !streamingMessage && !streamingThinking && <TypingIndicator />}
         </div>
       </div>
       <div className="shrink-0 mx-auto w-full max-w-4xl px-4">

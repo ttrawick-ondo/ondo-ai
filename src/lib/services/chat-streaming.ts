@@ -45,6 +45,7 @@ export interface StreamingConfig {
 export interface StreamingCallbacks {
   onStreamStart: () => void
   onStreamDelta: (delta: string, fullContent: string) => void
+  onThinkingDelta: (delta: string, fullThinking: string) => void
   onStreamComplete: () => void
   onMessageCreated: (message: Message) => void
   onMessagePersisted: (clientId: string, dbId: string) => void
@@ -133,6 +134,8 @@ export function createAssistantMessage(
     ondoBotStructured?: OndoBotStructuredResult
     // Citations from knowledge providers (e.g. Glean)
     citations?: Citation[]
+    // Thinking/reasoning text from providers
+    thinking?: string
   }
 ): Message {
   return {
@@ -148,6 +151,7 @@ export function createAssistantMessage(
       processingTimeMs: options?.processingTimeMs,
       routing: options?.routing,
       ondoBotStructured: options?.ondoBotStructured,
+      ...(options?.thinking && { thinking: options.thinking }),
     },
     createdAt: new Date(),
   }
@@ -243,6 +247,7 @@ export async function streamChat(
   // Recursive function to handle tool calls
   const processResponse = async (): Promise<StreamingResult> => {
     let fullResponse = ''
+    let fullThinking = ''
     let receivedToolCalls: ToolCall[] = []
     let routingInfo: RoutingInfo | undefined
     let finalMessage: Message | undefined
@@ -266,6 +271,10 @@ export async function streamChat(
           onDelta: (delta) => {
             fullResponse += delta
             callbacks.onStreamDelta(delta, fullResponse)
+          },
+          onThinkingDelta: (delta) => {
+            fullThinking += delta
+            callbacks.onThinkingDelta(delta, fullThinking)
           },
           onRoutingInfo: (info) => {
             routingInfo = info
@@ -356,6 +365,7 @@ export async function streamChat(
                   } : undefined,
                   ondoBotStructured: response.metadata.ondoBotStructured as OndoBotStructuredResult | undefined,
                   citations: response.citations,
+                  thinking: fullThinking || undefined,
                 })
 
                 callbacks.onMessageCreated(finalMessage)

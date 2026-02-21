@@ -75,6 +75,8 @@ export interface MessageMetadata {
   }
   // OndoBot structured result data for rich rendering
   ondoBotStructured?: OndoBotStructuredResult
+  // Thinking/reasoning text from providers (e.g. Glean UPDATE messages)
+  thinking?: string
 }
 
 export interface Message {

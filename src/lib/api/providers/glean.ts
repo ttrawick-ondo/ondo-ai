@@ -20,7 +20,7 @@ import type { Citation } from '@/types/chat'
 import { BaseProvider } from './base'
 import { getModelConfig } from '../config/providers'
 import { handleProviderError, ModelNotFoundError, APIError } from '../errors/apiErrors'
-import { createStartEvent, createDeltaEvent, createDoneEvent, createErrorEvent } from '../streaming/encoder'
+import { createStartEvent, createDeltaEvent, createThinkingDeltaEvent, createDoneEvent, createErrorEvent } from '../streaming/encoder'
 import { parseGleanCitations } from '@/lib/utils/citationParser'
 
 // Glean-native message format
@@ -167,6 +167,27 @@ export class GleanProvider extends BaseProvider {
   }
 
   /**
+   * Extract thinking/reasoning text from non-CONTENT Glean messages (UPDATE, CONTEXT, etc.)
+   */
+  private extractThinking(response: GleanChatApiResponse): string {
+    let thinking = ''
+    if (response.messages) {
+      for (const msg of response.messages) {
+        if (msg.author !== 'GLEAN_AI') continue
+        if (!msg.messageType || msg.messageType === 'CONTENT') continue
+        if (msg.fragments) {
+          for (const fragment of msg.fragments) {
+            if (fragment.text) {
+              thinking += fragment.text
+            }
+          }
+        }
+      }
+    }
+    return thinking
+  }
+
+  /**
    * Convert raw citation data to structured Citation[] objects
    */
   private buildCitations(rawCitations: Array<{ title: string; url: string; datasource?: string; snippet?: string }>): Citation[] {
@@ -305,6 +326,7 @@ export class GleanProvider extends BaseProvider {
 
       const decoder = new TextDecoder()
       let fullContent = ''
+      let fullThinking = ''
       const allRawCitations: Array<{ title: string; url: string; datasource?: string; snippet?: string }> = []
       let buffer = ''
 
@@ -331,6 +353,13 @@ export class GleanProvider extends BaseProvider {
               this.chatIdMap.set(conversationId, parsed.chatId)
             }
 
+            // Extract thinking text from non-CONTENT messages (UPDATE, CONTEXT, etc.)
+            const thinkingChunk = this.extractThinking(parsed)
+            if (thinkingChunk) {
+              fullThinking += thinkingChunk
+              yield createThinkingDeltaEvent(thinkingChunk)
+            }
+
             const { content: chunkContent, rawCitations } = this.extractContent(parsed)
 
             if (chunkContent) {
@@ -355,6 +384,11 @@ export class GleanProvider extends BaseProvider {
           const parsed: GleanChatApiResponse = JSON.parse(buffer.trim())
           if (parsed.chatId) {
             this.chatIdMap.set(conversationId, parsed.chatId)
+          }
+          const thinkingChunk = this.extractThinking(parsed)
+          if (thinkingChunk) {
+            fullThinking += thinkingChunk
+            yield createThinkingDeltaEvent(thinkingChunk)
           }
           const { content: chunkContent, rawCitations } = this.extractContent(parsed)
           if (chunkContent) {
@@ -388,7 +422,7 @@ export class GleanProvider extends BaseProvider {
         provider: 'glean',
         processingTimeMs: Date.now() - startTime,
         finishReason: 'stop',
-      }, structuredCitations)
+      }, structuredCitations, fullThinking || undefined)
     } catch (error) {
       const apiError = handleProviderError(error, 'glean')
       yield createErrorEvent(apiError.message)

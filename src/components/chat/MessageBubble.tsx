@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip'
 import { MarkdownRenderer } from './MarkdownRenderer'
+import { ThinkingDisplay } from './ThinkingDisplay'
 import { ToolCallDisplay, ToolResultDisplay } from './ToolCallDisplay'
 import { ContentWithCitations } from './CitedContent'
 import { OndoBotResults } from './OndoBotResults'
@@ -19,7 +20,7 @@ import { ModelBadge } from '@/components/model'
 import type { Message, AIProvider, ImageAttachment, FileAttachment } from '@/types'
 import type { RequestIntent } from '@/lib/api/routing'
 import { isFileAttachment } from '@/types'
-import { useCurrentUser, useModels, useIsExecutingTools, useShowRoutingIndicator } from '@/stores'
+import { useCurrentUser, useModels, useIsExecutingTools, useShowRoutingIndicator, useStreamingThinking } from '@/stores'
 
 interface MessageBubbleProps {
   message: Message
@@ -45,6 +46,7 @@ export function MessageBubble({ message, isStreaming, onBranch }: MessageBubbleP
   const models = useModels()
   const isExecutingTools = useIsExecutingTools()
   const showRoutingIndicator = useShowRoutingIndicator()
+  const streamingThinking = useStreamingThinking()
   const isUser = message.role === 'user'
   const isTool = message.role === 'tool'
   const hasToolCalls = message.tool_calls && message.tool_calls.length > 0
@@ -174,6 +176,14 @@ export function MessageBubble({ message, isStreaming, onBranch }: MessageBubbleP
               onAskAboutThis={handleAskAboutThis}
             />
           )}
+
+          {/* Thinking display (e.g. Glean reasoning) */}
+          {(isStreaming && streamingThinking) || message.metadata?.thinking ? (
+            <ThinkingDisplay
+              thinking={isStreaming && streamingThinking ? streamingThinking : (message.metadata?.thinking || '')}
+              isStreaming={isStreaming && !!streamingThinking}
+            />
+          ) : null}
 
           {/* Check for OndoBot structured data for rich rendering */}
           {message.metadata?.ondoBotStructured &&
